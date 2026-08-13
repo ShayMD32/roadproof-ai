@@ -13,6 +13,10 @@ class Vehicle(BaseModel):
     year: int
 
 
+def normalise_registration(registration: str):
+    return registration.replace(" ", "").upper()
+
+
 @app.get("/")
 def home():
     return {
@@ -31,7 +35,7 @@ def health():
 @app.post("/vehicle")
 def create_vehicle(vehicle: Vehicle):
     for existing_vehicle in vehicles:
-        if existing_vehicle.registration.replace(" ", "").upper() == vehicle.registration.replace(" ", "").upper():
+        if normalise_registration(existing_vehicle.registration) == normalise_registration(vehicle.registration):
             raise HTTPException(
                 status_code=409,
                 detail="Vehicle already exists"
@@ -53,7 +57,7 @@ def get_vehicles():
 @app.get("/vehicles/{registration}")
 def get_vehicle(registration: str):
     for vehicle in vehicles:
-        if vehicle.registration.replace(" ", "").upper() == registration.replace(" ", "").upper():
+        if normalise_registration(vehicle.registration) == normalise_registration(registration):
             return vehicle
 
     raise HTTPException(
@@ -65,7 +69,7 @@ def get_vehicle(registration: str):
 @app.put("/vehicles/{registration}")
 def update_vehicle(registration: str, updated_vehicle: Vehicle):
     for index, vehicle in enumerate(vehicles):
-        if vehicle.registration.replace(" ", "").upper() == registration.replace(" ", "").upper():
+        if normalise_registration(vehicle.registration) == normalise_registration(registration):
             vehicles[index] = updated_vehicle
 
             return {
@@ -82,7 +86,7 @@ def update_vehicle(registration: str, updated_vehicle: Vehicle):
 @app.delete("/vehicles/{registration}")
 def delete_vehicle(registration: str):
     for index, vehicle in enumerate(vehicles):
-        if vehicle.registration.replace(" ", "").upper() == registration.replace(" ", "").upper():
+        if normalise_registration(vehicle.registration) == normalise_registration(registration):
             deleted_vehicle = vehicles.pop(index)
 
             return {
