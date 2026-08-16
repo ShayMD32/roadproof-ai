@@ -102,3 +102,90 @@ def test_delete_vehicle(client):
 
     assert get_response.status_code == 404
     assert get_response.json()["detail"] == "Vehicle not found"
+
+
+def test_upload_damage_image(client):
+    vehicle_data = {
+        "registration": "IMG12 CAR",
+        "make": "BMW",
+        "model": "M3",
+        "year": 2023
+    }
+
+    client.post("/vehicle", json=vehicle_data)
+
+    files = {
+        "image": (
+            "damage.jpg",
+            b"fake-image-data",
+            "image/jpeg"
+        )
+    }
+
+    response = client.post(
+        "/vehicles/img12car/damage-image",
+        files=files
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Damage image uploaded successfully!"
+    assert response.json()["registration"] == "IMG12CAR"
+    assert response.json()["image"]["filename"].endswith("_damage.jpg")
+
+
+def test_reject_invalid_file_type(client):
+    vehicle_data = {
+        "registration": "FILE12 CAR",
+        "make": "Audi",
+        "model": "A3",
+        "year": 2022
+    }
+
+    client.post("/vehicle", json=vehicle_data)
+
+    files = {
+        "image": (
+            "notes.txt",
+            b"this is not an image",
+            "text/plain"
+        )
+    }
+
+    response = client.post(
+        "/vehicles/file12car/damage-image",
+        files=files
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only JPEG and PNG images are allowed"
+
+
+def test_reject_oversized_image(client):
+    vehicle_data = {
+        "registration": "BIG12 CAR",
+        "make": "Mercedes",
+        "model": "A35",
+        "year": 2024
+    }
+
+    client.post("/vehicle", json=vehicle_data)
+
+    oversized_image = b"x" * (5 * 1024 * 1024 + 1)
+
+    files = {
+        "image": (
+            "huge.jpg",
+            oversized_image,
+            "image/jpeg"
+        )
+    }
+
+    response = client.post(
+        "/vehicles/big12car/damage-image",
+        files=files
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        "Image file is too large. Maximum size is 5MB."
+    )

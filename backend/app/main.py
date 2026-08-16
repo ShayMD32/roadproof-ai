@@ -1,23 +1,26 @@
+import os
+import json
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from fastapi import Depends
 
 from app.database import SessionLocal, engine, Base
-from app.models import VehicleDB
+from app.models import (
+    VehicleDB,
+    DamageImageDB,
+    InspectionDB
+)
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from app.services.inspection_service import (
+    analyse_damage_image
+)
+
 
 Base.metadata.create_all(bind=engine)
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
 
 app = FastAPI()
-
 
 
 class Vehicle(BaseModel):
@@ -25,6 +28,15 @@ class Vehicle(BaseModel):
     make: str
     model: str
     year: int
+
+
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def normalise_registration(registration: str):
@@ -81,7 +93,9 @@ def create_vehicle(
 
 
 @app.get("/vehicles")
-def get_vehicles(db: Session = Depends(get_db)):
+def get_vehicles(
+    db: Session = Depends(get_db)
+):
     return db.query(VehicleDB).all()
 
 
@@ -123,7 +137,9 @@ def update_vehicle(
             detail="Vehicle not found"
         )
 
-    new_registration = normalise_registration(updated_vehicle.registration)
+    new_registration = normalise_registration(
+        updated_vehicle.registration
+    )
 
     duplicate_vehicle = db.query(VehicleDB).filter(
         VehicleDB.registration == new_registration,
@@ -173,4 +189,172 @@ def delete_vehicle(
     return {
         "message": "Vehicle deleted successfully!",
         "vehicle": vehicle
+    }
+
+
+@app.post("/vehicles/{registration}/damage-image")
+async def upload_damage_image(
+    registration: str,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(registration)
+
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
+
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    allowed_types = [
+        "image/jpeg",
+        "image/png"
+    ]
+
+    if image.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPEG and PNG images are allowed"
+        )
+
+    contents = await image.read()
+
+    max_file_size = 5 * 1024 * 1024
+
+    if len(contents) > max_file_size:
+        raise HTTPException(
+            status_code=413,
+            detail="Image file is too large. Maximum size is 5MB."
+        )
+
+    upload_directory = "uploads"
+
+    os.makedirs(
+        upload_directory,
+        exist_ok=True
+    )
+
+    unique_filename = f"{uuid4()}_{image.filename}"
+
+    file_path = os.path.join(
+        upload_directory,
+        f"{normalised_registration}_{unique_filename}"
+    )
+
+    with open(file_path, "wb") as file:
+        file.write(contents)
+
+    damage_image = DamageImageDB(
+        filename=unique_filename,
+        file_path=file_path,
+        vehicle_id=vehicle.id
+    )
+
+    db.add(damage_image)
+    db.commit()
+    db.refresh(damage_image)
+
+    return {
+        "message": "Damage image uploaded successfully!",
+        "registration": normalised_registration,
+        "image": {
+            "id": damage_image.id,
+            "filename": damage_image.filename,
+            "file_path": damage_image.file_path
+        }
+    }
+
+
+@app.get("/vehicles/{registration}/damage-images")
+def get_damage_images(
+    registration: str,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(registration)
+
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
+
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    damage_images = db.query(DamageImageDB).filter(
+        DamageImageDB.vehicle_id == vehicle.id
+    ).all()
+
+    return {
+        "registration": normalised_registration,
+        "images": damage_images
+    }
+@app.post("/damage-images/{image_id}/analyse")
+def analyse_image(
+    image_id: int,
+    db: Session = Depends(get_db)
+):
+    damage_image = db.query(DamageImageDB).filter(
+        DamageImageDB.id == image_id
+    ).first()
+
+    if not damage_image:
+        raise HTTPException(
+            status_code=404,
+            detail="Damage image not found"
+        )
+
+    try:
+        inspection = analyse_damage_image(
+            image_id=image_id,
+            db=db
+        )
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Damage analysis failed"
+        )
+
+    return {
+        "message": "Damage analysis completed successfully!",
+        "inspection": {
+            "id": inspection.id,
+            "image_id": inspection.damage_image_id,
+            "status": inspection.status,
+            "damage_detected": inspection.damage_detected,
+            "damage_count": inspection.damage_count,
+            "highest_confidence": inspection.highest_confidence,
+            "model": {
+                "repository": inspection.model_repository,
+                "checkpoint": inspection.model_checkpoint,
+                "confidence_threshold": (
+                    inspection.confidence_threshold
+                )
+            },
+            "detections": [
+                {
+                    "id": detection.id,
+                    "damage_type": detection.damage_type,
+                    "confidence": detection.confidence,
+                    "bounding_box": {
+                        "x1": detection.x1,
+                        "y1": detection.y1,
+                        "x2": detection.x2,
+                        "y2": detection.y2
+                    },
+                    "segmentation": json.loads(
+                        detection.segmentation
+                    )
+                    if detection.segmentation
+                    else []
+                }
+                for detection in inspection.detections
+            ]
+        }
     }
