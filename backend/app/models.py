@@ -92,6 +92,21 @@ class InspectionDB(Base):
         nullable=True
     )
 
+    severity = Column(
+    String,
+    nullable=True
+)
+
+    severity_score = Column(
+    Integer,
+    nullable=True
+    )
+
+    severity_factors = Column(
+    Text,
+    nullable=True
+   )
+
     model_repository = Column(
         String,
         nullable=False

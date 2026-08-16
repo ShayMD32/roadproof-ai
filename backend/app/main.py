@@ -294,6 +294,8 @@ def get_damage_images(
         "registration": normalised_registration,
         "images": damage_images
     }
+
+
 @app.post("/damage-images/{image_id}/analyse")
 def analyse_image(
     image_id: int,
@@ -330,6 +332,13 @@ def analyse_image(
             "damage_detected": inspection.damage_detected,
             "damage_count": inspection.damage_count,
             "highest_confidence": inspection.highest_confidence,
+            "severity": inspection.severity,
+            "severity_score": inspection.severity_score,
+            "severity_factors": (
+                json.loads(inspection.severity_factors)
+                if inspection.severity_factors
+                else {}
+            ),
             "model": {
                 "repository": inspection.model_repository,
                 "checkpoint": inspection.model_checkpoint,
@@ -348,13 +357,84 @@ def analyse_image(
                         "x2": detection.x2,
                         "y2": detection.y2
                     },
-                    "segmentation": json.loads(
-                        detection.segmentation
+                    "segmentation": (
+                        json.loads(detection.segmentation)
+                        if detection.segmentation
+                        else []
                     )
-                    if detection.segmentation
-                    else []
                 }
                 for detection in inspection.detections
             ]
         }
+    }
+
+
+@app.get("/damage-images/{image_id}/inspections")
+def get_image_inspections(
+    image_id: int,
+    db: Session = Depends(get_db)
+):
+    damage_image = db.query(DamageImageDB).filter(
+        DamageImageDB.id == image_id
+    ).first()
+
+    if not damage_image:
+        raise HTTPException(
+            status_code=404,
+            detail="Damage image not found"
+        )
+
+    inspections = db.query(InspectionDB).filter(
+        InspectionDB.damage_image_id == image_id
+    ).order_by(
+        InspectionDB.created_at.desc()
+    ).all()
+
+    return {
+        "image_id": image_id,
+        "inspection_count": len(inspections),
+        "inspections": [
+            {
+                "id": inspection.id,
+                "status": inspection.status,
+                "damage_detected": inspection.damage_detected,
+                "damage_count": inspection.damage_count,
+                "highest_confidence": inspection.highest_confidence,
+                "severity": inspection.severity,
+                "severity_score": inspection.severity_score,
+                "severity_factors": (
+                    json.loads(inspection.severity_factors)
+                    if inspection.severity_factors
+                    else {}
+                ),
+                "created_at": inspection.created_at,
+                "model": {
+                    "repository": inspection.model_repository,
+                    "checkpoint": inspection.model_checkpoint,
+                    "confidence_threshold": (
+                        inspection.confidence_threshold
+                    )
+                },
+                "detections": [
+                    {
+                        "id": detection.id,
+                        "damage_type": detection.damage_type,
+                        "confidence": detection.confidence,
+                        "bounding_box": {
+                            "x1": detection.x1,
+                            "y1": detection.y1,
+                            "x2": detection.x2,
+                            "y2": detection.y2
+                        },
+                        "segmentation": (
+                            json.loads(detection.segmentation)
+                            if detection.segmentation
+                            else []
+                        )
+                    }
+                    for detection in inspection.detections
+                ]
+            }
+            for inspection in inspections
+        ]
     }

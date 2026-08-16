@@ -1,5 +1,6 @@
 import json
 
+from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -8,6 +9,7 @@ from app.models import (
     DamageDetectionDB
 )
 from app.services.damage_detector import damage_detector
+from app.services.severity_assessor import severity_assessor
 
 
 def analyse_damage_image(
@@ -50,6 +52,27 @@ def analyse_damage_image(
         inspection.highest_confidence = result[
             "highest_confidence"
         ]
+
+        with Image.open(damage_image.file_path) as image:
+            image_width, image_height = image.size
+
+        severity_result = severity_assessor.assess(
+            detections=result["detections"],
+            image_width=image_width,
+            image_height=image_height
+        )
+
+        inspection.severity = severity_result[
+            "severity"
+        ]
+
+        inspection.severity_score = severity_result[
+            "severity_score"
+        ]
+
+        inspection.severity_factors = json.dumps(
+            severity_result["factors"]
+        )
 
         for detection in result["detections"]:
             bounding_box = detection["bounding_box"]
