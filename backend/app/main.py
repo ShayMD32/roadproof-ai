@@ -1,9 +1,23 @@
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+from app.database import SessionLocal, engine, Base
+from app.models import VehicleDB
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+Base.metadata.create_all(bind=engine)
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
+
 app = FastAPI()
 
-vehicles = []
 
 
 class Vehicle(BaseModel):
@@ -33,68 +47,130 @@ def health():
 
 
 @app.post("/vehicle")
-def create_vehicle(vehicle: Vehicle):
-    for existing_vehicle in vehicles:
-        if normalise_registration(existing_vehicle.registration) == normalise_registration(vehicle.registration):
-            raise HTTPException(
-                status_code=409,
-                detail="Vehicle already exists"
-            )
+def create_vehicle(
+    vehicle: Vehicle,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(vehicle.registration)
 
-    vehicles.append(vehicle)
+    existing_vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
+
+    if existing_vehicle:
+        raise HTTPException(
+            status_code=409,
+            detail="Vehicle already exists"
+        )
+
+    new_vehicle = VehicleDB(
+        registration=normalised_registration,
+        make=vehicle.make,
+        model=vehicle.model,
+        year=vehicle.year
+    )
+
+    db.add(new_vehicle)
+    db.commit()
+    db.refresh(new_vehicle)
 
     return {
         "message": "Vehicle received successfully!",
-        "vehicle": vehicle
+        "vehicle": new_vehicle
     }
 
 
 @app.get("/vehicles")
-def get_vehicles():
-    return vehicles
+def get_vehicles(db: Session = Depends(get_db)):
+    return db.query(VehicleDB).all()
 
 
 @app.get("/vehicles/{registration}")
-def get_vehicle(registration: str):
-    for vehicle in vehicles:
-        if normalise_registration(vehicle.registration) == normalise_registration(registration):
-            return vehicle
+def get_vehicle(
+    registration: str,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(registration)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Vehicle not found"
-    )
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
+
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    return vehicle
 
 
 @app.put("/vehicles/{registration}")
-def update_vehicle(registration: str, updated_vehicle: Vehicle):
-    for index, vehicle in enumerate(vehicles):
-        if normalise_registration(vehicle.registration) == normalise_registration(registration):
-            vehicles[index] = updated_vehicle
+def update_vehicle(
+    registration: str,
+    updated_vehicle: Vehicle,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(registration)
 
-            return {
-                "message": "Vehicle updated successfully!",
-                "vehicle": updated_vehicle
-            }
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
 
-    raise HTTPException(
-        status_code=404,
-        detail="Vehicle not found"
-    )
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    new_registration = normalise_registration(updated_vehicle.registration)
+
+    duplicate_vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == new_registration,
+        VehicleDB.id != vehicle.id
+    ).first()
+
+    if duplicate_vehicle:
+        raise HTTPException(
+            status_code=409,
+            detail="Vehicle already exists"
+        )
+
+    vehicle.registration = new_registration
+    vehicle.make = updated_vehicle.make
+    vehicle.model = updated_vehicle.model
+    vehicle.year = updated_vehicle.year
+
+    db.commit()
+    db.refresh(vehicle)
+
+    return {
+        "message": "Vehicle updated successfully!",
+        "vehicle": vehicle
+    }
 
 
 @app.delete("/vehicles/{registration}")
-def delete_vehicle(registration: str):
-    for index, vehicle in enumerate(vehicles):
-        if normalise_registration(vehicle.registration) == normalise_registration(registration):
-            deleted_vehicle = vehicles.pop(index)
+def delete_vehicle(
+    registration: str,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(registration)
 
-            return {
-                "message": "Vehicle deleted successfully!",
-                "vehicle": deleted_vehicle
-            }
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
 
-    raise HTTPException(
-        status_code=404,
-        detail="Vehicle not found"
-    )
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    db.delete(vehicle)
+    db.commit()
+
+    return {
+        "message": "Vehicle deleted successfully!",
+        "vehicle": vehicle
+    }

@@ -18,7 +18,7 @@ def test_create_vehicle():
     response = client.post(
         "/vehicle",
         json={
-            "registration": "AB12 CDE",
+            "registration": "TEST 001",
             "make": "BMW",
             "model": "M3",
             "year": 2023
@@ -26,7 +26,7 @@ def test_create_vehicle():
     )
 
     assert response.status_code == 200
-    assert response.json()["vehicle"]["registration"] == "AB12 CDE"
+    assert response.json()["vehicle"]["registration"] == "TEST001"
     assert response.json()["vehicle"]["make"] == "BMW"
 
 
@@ -58,7 +58,7 @@ def test_get_vehicle():
     response = client.get("/vehicles/zz99xyz")
 
     assert response.status_code == 200
-    assert response.json()["registration"] == "ZZ99 XYZ"
+    assert response.json()["registration"] == "ZZ99XYZ"
     assert response.json()["make"] == "Mercedes"
 
 
