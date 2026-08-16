@@ -228,3 +228,6 @@ __pycache__/
 # Database files
 backend/roadproof.db
 backend/test_roadproof.db
+
+# Uploaded images
+backend/uploads/
