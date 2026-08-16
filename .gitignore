@@ -215,4 +215,16 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.tomlbackend/.venv/
+.streamlit/secrets.toml
+
+# Virtual environments
+backend/.venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Database files
+backend/roadproof.db
+backend/test_roadproof.db
