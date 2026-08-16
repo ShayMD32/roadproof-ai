@@ -1,10 +1,4 @@
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
-
-
-def test_health():
+def test_health(client):
     response = client.get("/health")
 
     assert response.status_code == 200
@@ -14,11 +8,11 @@ def test_health():
     }
 
 
-def test_create_vehicle():
+def test_create_vehicle(client):
     response = client.post(
         "/vehicle",
         json={
-            "registration": "TEST 001",
+            "registration": "AB12 CDE",
             "make": "BMW",
             "model": "M3",
             "year": 2023
@@ -26,11 +20,11 @@ def test_create_vehicle():
     )
 
     assert response.status_code == 200
-    assert response.json()["vehicle"]["registration"] == "TEST001"
+    assert response.json()["vehicle"]["registration"] == "AB12CDE"
     assert response.json()["vehicle"]["make"] == "BMW"
 
 
-def test_duplicate_vehicle():
+def test_duplicate_vehicle(client):
     vehicle_data = {
         "registration": "XY12 ABC",
         "make": "Audi",
@@ -45,7 +39,7 @@ def test_duplicate_vehicle():
     assert response.json()["detail"] == "Vehicle already exists"
 
 
-def test_get_vehicle():
+def test_get_vehicle(client):
     vehicle_data = {
         "registration": "ZZ99 XYZ",
         "make": "Mercedes",
@@ -62,7 +56,7 @@ def test_get_vehicle():
     assert response.json()["make"] == "Mercedes"
 
 
-def test_update_vehicle():
+def test_update_vehicle(client):
     vehicle_data = {
         "registration": "YY22 CAR",
         "make": "BMW",
@@ -89,7 +83,7 @@ def test_update_vehicle():
     assert response.json()["vehicle"]["year"] == 2024
 
 
-def test_delete_vehicle():
+def test_delete_vehicle(client):
     vehicle_data = {
         "registration": "DL55 CAR",
         "make": "Ford",
