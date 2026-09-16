@@ -1,0 +1,73 @@
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel
+
+
+class VehicleReport(BaseModel):
+    registration: str
+    make: str
+    model: str
+    year: int
+
+
+class ImageReport(BaseModel):
+    id: int
+    filename: str
+
+
+class BoundingBox(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class DamageDetectionReport(BaseModel):
+    id: int
+    damage_type: str
+    confidence: float
+    bounding_box: BoundingBox
+    segmentation: list[dict[str, Any]]
+
+
+class SeveritySummary(BaseModel):
+    damage_detected: bool
+    damage_count: int
+    highest_confidence: float | None = None
+    severity: str | None = None
+    severity_score: float | None = None
+    severity_factors: dict[str, Any]
+
+
+class ModelReport(BaseModel):
+    repository: str
+    checkpoint: str
+    confidence_threshold: float
+
+
+class InspectionReport(BaseModel):
+    inspection_id: int
+    created_at: datetime
+    status: str
+    vehicle: VehicleReport
+    image: ImageReport
+    summary: SeveritySummary
+    detections: list[DamageDetectionReport]
+    model: ModelReport
+
+
+class InspectionReportResponse(BaseModel):
+    report: InspectionReport
+
+
+class VehicleInspectionSummary(BaseModel):
+    registration: str
+    vehicle: VehicleReport
+    total_images: int
+    total_inspections: int
+    damage_detected: bool
+    total_damage_detections: int
+    latest_severity: str | None = None
+    latest_severity_score: float | None = None
+    latest_inspection_id: int | None = None

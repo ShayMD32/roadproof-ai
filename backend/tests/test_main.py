@@ -1,6 +1,9 @@
 import json
 
-from app.models import InspectionDB, DamageDetectionDB
+from app.models import (
+    InspectionDB,
+    DamageDetectionDB
+)
 
 
 def create_mock_inspection(image_id, db):
@@ -10,7 +13,10 @@ def create_mock_inspection(image_id, db):
         damage_detected=True,
         damage_count=1,
         highest_confidence=0.9298,
-        model_repository="harpreetsahota/car-dd-segmentation-yolov11",
+        model_repository=(
+            "harpreetsahota/"
+            "car-dd-segmentation-yolov11"
+        ),
         model_checkpoint="best.pt",
         confidence_threshold=0.25
     )
@@ -28,8 +34,14 @@ def create_mock_inspection(image_id, db):
         x2=550.91,
         y2=567.41,
         segmentation=json.dumps([
-            {"x": 426.12, "y": 411.82},
-            {"x": 425.10, "y": 412.84}
+            {
+                "x": 426.12,
+                "y": 411.82
+            },
+            {
+                "x": 425.10,
+                "y": 412.84
+            }
         ])
     )
 
@@ -44,6 +56,7 @@ def test_health(client):
     response = client.get("/health")
 
     assert response.status_code == 200
+
     assert response.json() == {
         "status": "Server Running",
         "version": "1.0"
@@ -62,8 +75,16 @@ def test_create_vehicle(client):
     )
 
     assert response.status_code == 200
-    assert response.json()["vehicle"]["registration"] == "AB12CDE"
-    assert response.json()["vehicle"]["make"] == "BMW"
+
+    assert (
+        response.json()["vehicle"]["registration"]
+        == "AB12CDE"
+    )
+
+    assert (
+        response.json()["vehicle"]["make"]
+        == "BMW"
+    )
 
 
 def test_duplicate_vehicle(client):
@@ -74,11 +95,22 @@ def test_duplicate_vehicle(client):
         "year": 2024
     }
 
-    client.post("/vehicle", json=vehicle_data)
-    response = client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
+
+    response = client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Vehicle already exists"
+
+    assert (
+        response.json()["detail"]
+        == "Vehicle already exists"
+    )
 
 
 def test_get_vehicle(client):
@@ -89,13 +121,26 @@ def test_get_vehicle(client):
         "year": 2024
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
-    response = client.get("/vehicles/zz99xyz")
+    response = client.get(
+        "/vehicles/zz99xyz"
+    )
 
     assert response.status_code == 200
-    assert response.json()["registration"] == "ZZ99XYZ"
-    assert response.json()["make"] == "Mercedes"
+
+    assert (
+        response.json()["registration"]
+        == "ZZ99XYZ"
+    )
+
+    assert (
+        response.json()["make"]
+        == "Mercedes"
+    )
 
 
 def test_update_vehicle(client):
@@ -106,7 +151,10 @@ def test_update_vehicle(client):
         "year": 2022
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     updated_data = {
         "registration": "YY22 CAR",
@@ -121,8 +169,16 @@ def test_update_vehicle(client):
     )
 
     assert response.status_code == 200
-    assert response.json()["vehicle"]["model"] == "M3 Competition"
-    assert response.json()["vehicle"]["year"] == 2024
+
+    assert (
+        response.json()["vehicle"]["model"]
+        == "M3 Competition"
+    )
+
+    assert (
+        response.json()["vehicle"]["year"]
+        == 2024
+    )
 
 
 def test_delete_vehicle(client):
@@ -133,17 +189,32 @@ def test_delete_vehicle(client):
         "year": 2021
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
-    response = client.delete("/vehicles/dl55car")
+    response = client.delete(
+        "/vehicles/dl55car"
+    )
 
     assert response.status_code == 200
-    assert response.json()["message"] == "Vehicle deleted successfully!"
 
-    get_response = client.get("/vehicles/dl55car")
+    assert (
+        response.json()["message"]
+        == "Vehicle deleted successfully!"
+    )
+
+    get_response = client.get(
+        "/vehicles/dl55car"
+    )
 
     assert get_response.status_code == 404
-    assert get_response.json()["detail"] == "Vehicle not found"
+
+    assert (
+        get_response.json()["detail"]
+        == "Vehicle not found"
+    )
 
 
 def test_upload_damage_image(client):
@@ -154,7 +225,10 @@ def test_upload_damage_image(client):
         "year": 2023
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     files = {
         "image": (
@@ -170,9 +244,21 @@ def test_upload_damage_image(client):
     )
 
     assert response.status_code == 200
-    assert response.json()["message"] == "Damage image uploaded successfully!"
-    assert response.json()["registration"] == "IMG12CAR"
-    assert response.json()["image"]["filename"].endswith("_damage.jpg")
+
+    assert (
+        response.json()["message"]
+        == "Damage image uploaded successfully!"
+    )
+
+    assert (
+        response.json()["registration"]
+        == "IMG12CAR"
+    )
+
+    assert (
+        response.json()["image"]["filename"]
+        .endswith("_damage.jpg")
+    )
 
 
 def test_reject_invalid_file_type(client):
@@ -183,7 +269,10 @@ def test_reject_invalid_file_type(client):
         "year": 2022
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     files = {
         "image": (
@@ -199,6 +288,7 @@ def test_reject_invalid_file_type(client):
     )
 
     assert response.status_code == 400
+
     assert response.json()["detail"] == (
         "Only JPEG and PNG images are allowed"
     )
@@ -212,9 +302,14 @@ def test_reject_oversized_image(client):
         "year": 2024
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
-    oversized_image = b"x" * (5 * 1024 * 1024 + 1)
+    oversized_image = (
+        b"x" * (5 * 1024 * 1024 + 1)
+    )
 
     files = {
         "image": (
@@ -230,12 +325,17 @@ def test_reject_oversized_image(client):
     )
 
     assert response.status_code == 413
+
     assert response.json()["detail"] == (
-        "Image file is too large. Maximum size is 5MB."
+        "Image file is too large. "
+        "Maximum size is 5MB."
     )
 
 
-def test_analyse_damage_image(client, monkeypatch):
+def test_analyse_damage_image(
+    client,
+    monkeypatch
+):
     vehicle_data = {
         "registration": "AI12 CAR",
         "make": "BMW",
@@ -243,7 +343,10 @@ def test_analyse_damage_image(client, monkeypatch):
         "year": 2023
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     files = {
         "image": (
@@ -258,9 +361,14 @@ def test_analyse_damage_image(client, monkeypatch):
         files=files
     )
 
-    image_id = upload_response.json()["image"]["id"]
+    image_id = (
+        upload_response.json()["image"]["id"]
+    )
 
-    def fake_analyse_damage_image(image_id, db):
+    def fake_analyse_damage_image(
+        image_id,
+        db
+    ):
         return create_mock_inspection(
             image_id=image_id,
             db=db
@@ -277,28 +385,68 @@ def test_analyse_damage_image(client, monkeypatch):
 
     assert response.status_code == 200
 
-    inspection = response.json()["inspection"]
+    inspection = (
+        response.json()["inspection"]
+    )
 
-    assert inspection["status"] == "completed"
-    assert inspection["damage_detected"] is True
-    assert inspection["damage_count"] == 1
-    assert inspection["highest_confidence"] == 0.9298
+    assert (
+        inspection["status"]
+        == "completed"
+    )
 
-    assert len(inspection["detections"]) == 1
-    assert inspection["detections"][0]["damage_type"] == "dent"
-    assert inspection["detections"][0]["confidence"] == 0.9298
+    assert (
+        inspection["damage_detected"]
+        is True
+    )
+
+    assert (
+        inspection["damage_count"]
+        == 1
+    )
+
+    assert (
+        inspection["highest_confidence"]
+        == 0.9298
+    )
+
+    assert (
+        len(inspection["detections"])
+        == 1
+    )
+
+    assert (
+        inspection["detections"][0][
+            "damage_type"
+        ]
+        == "dent"
+    )
+
+    assert (
+        inspection["detections"][0][
+            "confidence"
+        ]
+        == 0.9298
+    )
 
 
-def test_analyse_missing_damage_image(client):
+def test_analyse_missing_damage_image(
+    client
+):
     response = client.post(
         "/damage-images/999999/analyse"
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Damage image not found"
+
+    assert response.json()["detail"] == (
+        "Damage image not found"
+    )
 
 
-def test_get_image_inspections(client, monkeypatch):
+def test_get_image_inspections(
+    client,
+    monkeypatch
+):
     vehicle_data = {
         "registration": "HIST12 CAR",
         "make": "BMW",
@@ -306,7 +454,10 @@ def test_get_image_inspections(client, monkeypatch):
         "year": 2024
     }
 
-    client.post("/vehicle", json=vehicle_data)
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
 
     files = {
         "image": (
@@ -321,9 +472,14 @@ def test_get_image_inspections(client, monkeypatch):
         files=files
     )
 
-    image_id = upload_response.json()["image"]["id"]
+    image_id = (
+        upload_response.json()["image"]["id"]
+    )
 
-    def fake_analyse_damage_image(image_id, db):
+    def fake_analyse_damage_image(
+        image_id,
+        db
+    ):
         return create_mock_inspection(
             image_id=image_id,
             db=db
@@ -338,27 +494,318 @@ def test_get_image_inspections(client, monkeypatch):
         f"/damage-images/{image_id}/analyse"
     )
 
-    assert analysis_response.status_code == 200
+    assert (
+        analysis_response.status_code
+        == 200
+    )
 
     response = client.get(
         f"/damage-images/{image_id}/inspections"
     )
 
     assert response.status_code == 200
-    assert response.json()["image_id"] == image_id
-    assert response.json()["inspection_count"] == 1
 
-    inspection = response.json()["inspections"][0]
+    assert (
+        response.json()["image_id"]
+        == image_id
+    )
 
-    assert inspection["status"] == "completed"
-    assert inspection["damage_detected"] is True
-    assert inspection["damage_count"] == 1
-    assert inspection["highest_confidence"] == 0.9298
+    assert (
+        response.json()["inspection_count"]
+        == 1
+    )
 
-    assert inspection["model"]["checkpoint"] == "best.pt"
+    inspection = (
+        response.json()["inspections"][0]
+    )
 
-    detection = inspection["detections"][0]
+    assert (
+        inspection["status"]
+        == "completed"
+    )
 
-    assert detection["damage_type"] == "dent"
-    assert detection["confidence"] == 0.9298
-    assert len(detection["segmentation"]) == 2
+    assert (
+        inspection["damage_detected"]
+        is True
+    )
+
+    assert (
+        inspection["damage_count"]
+        == 1
+    )
+
+    assert (
+        inspection["highest_confidence"]
+        == 0.9298
+    )
+
+    assert (
+        inspection["model"]["checkpoint"]
+        == "best.pt"
+    )
+
+    detection = (
+        inspection["detections"][0]
+    )
+
+    assert (
+        detection["damage_type"]
+        == "dent"
+    )
+
+    assert (
+        detection["confidence"]
+        == 0.9298
+    )
+
+    assert (
+        len(detection["segmentation"])
+        == 2
+    )
+
+
+def test_get_inspection_report(
+    client,
+    monkeypatch
+):
+    vehicle_data = {
+        "registration": "REPORT12 CAR",
+        "make": "BMW",
+        "model": "M3",
+        "year": 2024
+    }
+
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
+
+    files = {
+        "image": (
+            "damage.jpg",
+            b"fake-image-data",
+            "image/jpeg"
+        )
+    }
+
+    upload_response = client.post(
+        "/vehicles/report12car/damage-image",
+        files=files
+    )
+
+    image_id = (
+        upload_response.json()["image"]["id"]
+    )
+
+    def fake_analyse_damage_image(
+        image_id,
+        db
+    ):
+        return create_mock_inspection(
+            image_id=image_id,
+            db=db
+        )
+
+    monkeypatch.setattr(
+        "app.main.analyse_damage_image",
+        fake_analyse_damage_image
+    )
+
+    analysis_response = client.post(
+        f"/damage-images/{image_id}/analyse"
+    )
+
+    inspection_id = (
+        analysis_response.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    response = client.get(
+        f"/inspections/{inspection_id}/report"
+    )
+
+    assert response.status_code == 200
+
+    report = response.json()["report"]
+
+    assert (
+        report["inspection_id"]
+        == inspection_id
+    )
+
+    assert (
+        report["vehicle"]["registration"]
+        == "REPORT12CAR"
+    )
+
+    assert (
+        report["vehicle"]["make"]
+        == "BMW"
+    )
+
+    assert (
+        report["vehicle"]["model"]
+        == "M3"
+    )
+
+    assert (
+        report["summary"]["damage_detected"]
+        is True
+    )
+
+    assert (
+        report["summary"]["damage_count"]
+        == 1
+    )
+
+    assert (
+        len(report["detections"])
+        == 1
+    )
+
+    assert (
+        report["detections"][0][
+            "damage_type"
+        ]
+        == "dent"
+    )
+
+
+def test_get_missing_inspection_report(
+    client
+):
+    response = client.get(
+        "/inspections/999999/report"
+    )
+
+    assert response.status_code == 404
+
+    assert response.json()["detail"] == (
+        "Inspection not found"
+    )
+
+
+def test_get_vehicle_inspection_summary(
+    client,
+    monkeypatch
+):
+    vehicle_data = {
+        "registration": "SUM12 CAR",
+        "make": "BMW",
+        "model": "M4",
+        "year": 2024
+    }
+
+    client.post(
+        "/vehicle",
+        json=vehicle_data
+    )
+
+    files = {
+        "image": (
+            "damage.jpg",
+            b"fake-image-data",
+            "image/jpeg"
+        )
+    }
+
+    upload_response = client.post(
+        "/vehicles/sum12car/damage-image",
+        files=files
+    )
+
+    image_id = (
+        upload_response.json()["image"]["id"]
+    )
+
+    def fake_analyse_damage_image(
+        image_id,
+        db
+    ):
+        return create_mock_inspection(
+            image_id=image_id,
+            db=db
+        )
+
+    monkeypatch.setattr(
+        "app.main.analyse_damage_image",
+        fake_analyse_damage_image
+    )
+
+    analysis_response = client.post(
+        f"/damage-images/{image_id}/analyse"
+    )
+
+    assert (
+        analysis_response.status_code
+        == 200
+    )
+
+    inspection_id = (
+        analysis_response.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    response = client.get(
+        "/vehicles/sum12car/inspection-summary"
+    )
+
+    assert response.status_code == 200
+
+    summary = response.json()
+
+    assert (
+        summary["registration"]
+        == "SUM12CAR"
+    )
+
+    assert (
+        summary["vehicle"]["make"]
+        == "BMW"
+    )
+
+    assert (
+        summary["vehicle"]["model"]
+        == "M4"
+    )
+
+    assert (
+        summary["total_images"]
+        == 1
+    )
+
+    assert (
+        summary["total_inspections"]
+        == 1
+    )
+
+    assert (
+        summary["damage_detected"]
+        is True
+    )
+
+    assert (
+        summary["total_damage_detections"]
+        == 1
+    )
+
+    assert (
+        summary["latest_inspection_id"]
+        == inspection_id
+    )
+
+
+def test_get_missing_vehicle_inspection_summary(
+    client
+):
+    response = client.get(
+        "/vehicles/NOTREAL123/inspection-summary"
+    )
+
+    assert response.status_code == 404
+
+    assert response.json()["detail"] == (
+        "Vehicle not found"
+    )
