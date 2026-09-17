@@ -7,7 +7,8 @@ from ultralytics import YOLO
 MODEL_REPO = "harpreetsahota/car-dd-segmentation-yolov11"
 MODEL_FILENAME = "best.pt"
 
-CONFIDENCE_THRESHOLD = 0.25
+# Temporary low threshold for debugging model behaviour
+CONFIDENCE_THRESHOLD = 0.01
 
 
 class DamageDetector:
@@ -30,19 +31,23 @@ class DamageDetector:
         results = self.model.predict(
             source=str(image),
             conf=CONFIDENCE_THRESHOLD,
-            verbose=False
+            verbose=True
         )
+
+        print("\n--- ROADPROOF RAW MODEL OUTPUT ---")
 
         detections = []
 
         for result in results:
             if result.boxes is None:
+                print("No boxes returned")
                 continue
 
             boxes = result.boxes
 
-            # Segmentation polygons are available when the model
-            # successfully produces masks for detected damage.
+            print("Classes:", self.model.names)
+            print("Number of boxes:", len(boxes))
+
             mask_polygons = None
 
             if result.masks is not None:
@@ -51,6 +56,13 @@ class DamageDetector:
             for index, box in enumerate(boxes):
                 class_id = int(box.cls.item())
                 confidence = float(box.conf.item())
+
+                damage_type = self.model.names[class_id]
+
+                print(
+                    f"Detected: {damage_type} "
+                    f"| Confidence: {confidence:.4f}"
+                )
 
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
 
@@ -71,7 +83,7 @@ class DamageDetector:
                     ]
 
                 detection = {
-                    "damage_type": self.model.names[class_id],
+                    "damage_type": damage_type,
                     "confidence": round(confidence, 4),
                     "bounding_box": {
                         "x1": round(x1, 2),
@@ -83,6 +95,8 @@ class DamageDetector:
                 }
 
                 detections.append(detection)
+
+        print("--- END RAW MODEL OUTPUT ---\n")
 
         highest_confidence = max(
             (

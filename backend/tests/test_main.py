@@ -2,7 +2,7 @@ import json
 
 from app.models import (
     InspectionDB,
-    DamageDetectionDB
+    DamageDetectionDB,
 )
 
 
@@ -18,7 +18,7 @@ def create_mock_inspection(image_id, db):
             "car-dd-segmentation-yolov11"
         ),
         model_checkpoint="best.pt",
-        confidence_threshold=0.25
+        confidence_threshold=0.25,
     )
 
     db.add(inspection)
@@ -33,16 +33,18 @@ def create_mock_inspection(image_id, db):
         y1=411.14,
         x2=550.91,
         y2=567.41,
-        segmentation=json.dumps([
-            {
-                "x": 426.12,
-                "y": 411.82
-            },
-            {
-                "x": 425.10,
-                "y": 412.84
-            }
-        ])
+        segmentation=json.dumps(
+            [
+                {
+                    "x": 426.12,
+                    "y": 411.82,
+                },
+                {
+                    "x": 425.10,
+                    "y": 412.84,
+                },
+            ]
+        ),
     )
 
     db.add(detection)
@@ -59,7 +61,7 @@ def test_health(client):
 
     assert response.json() == {
         "status": "Server Running",
-        "version": "1.0"
+        "version": "1.0",
     }
 
 
@@ -70,8 +72,8 @@ def test_create_vehicle(client):
             "registration": "AB12 CDE",
             "make": "BMW",
             "model": "M3",
-            "year": 2023
-        }
+            "year": 2023,
+        },
     )
 
     assert response.status_code == 200
@@ -92,17 +94,17 @@ def test_duplicate_vehicle(client):
         "registration": "XY12 ABC",
         "make": "Audi",
         "model": "RS3",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     response = client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     assert response.status_code == 409
@@ -118,12 +120,12 @@ def test_get_vehicle(client):
         "registration": "ZZ99 XYZ",
         "make": "Mercedes",
         "model": "A35",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     response = client.get(
@@ -148,24 +150,24 @@ def test_update_vehicle(client):
         "registration": "YY22 CAR",
         "make": "BMW",
         "model": "M3",
-        "year": 2022
+        "year": 2022,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     updated_data = {
         "registration": "YY22 CAR",
         "make": "BMW",
         "model": "M3 Competition",
-        "year": 2024
+        "year": 2024,
     }
 
     response = client.put(
         "/vehicles/yy22car",
-        json=updated_data
+        json=updated_data,
     )
 
     assert response.status_code == 200
@@ -186,12 +188,12 @@ def test_delete_vehicle(client):
         "registration": "DL55 CAR",
         "make": "Ford",
         "model": "Focus",
-        "year": 2021
+        "year": 2021,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     response = client.delete(
@@ -222,25 +224,25 @@ def test_upload_damage_image(client):
         "registration": "IMG12 CAR",
         "make": "BMW",
         "model": "M3",
-        "year": 2023
+        "year": 2023,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "damage.jpg",
             b"fake-image-data",
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     response = client.post(
         "/vehicles/img12car/damage-image",
-        files=files
+        files=files,
     )
 
     assert response.status_code == 200
@@ -266,25 +268,25 @@ def test_reject_invalid_file_type(client):
         "registration": "FILE12 CAR",
         "make": "Audi",
         "model": "A3",
-        "year": 2022
+        "year": 2022,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "notes.txt",
             b"this is not an image",
-            "text/plain"
+            "text/plain",
         )
     }
 
     response = client.post(
         "/vehicles/file12car/damage-image",
-        files=files
+        files=files,
     )
 
     assert response.status_code == 400
@@ -299,12 +301,12 @@ def test_reject_oversized_image(client):
         "registration": "BIG12 CAR",
         "make": "Mercedes",
         "model": "A35",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     oversized_image = (
@@ -315,13 +317,13 @@ def test_reject_oversized_image(client):
         "image": (
             "huge.jpg",
             oversized_image,
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     response = client.post(
         "/vehicles/big12car/damage-image",
-        files=files
+        files=files,
     )
 
     assert response.status_code == 413
@@ -334,31 +336,31 @@ def test_reject_oversized_image(client):
 
 def test_analyse_damage_image(
     client,
-    monkeypatch
+    monkeypatch,
 ):
     vehicle_data = {
         "registration": "AI12 CAR",
         "make": "BMW",
         "model": "M3",
-        "year": 2023
+        "year": 2023,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "damage.jpg",
             b"fake-image-data",
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     upload_response = client.post(
         "/vehicles/ai12car/damage-image",
-        files=files
+        files=files,
     )
 
     image_id = (
@@ -367,16 +369,16 @@ def test_analyse_damage_image(
 
     def fake_analyse_damage_image(
         image_id,
-        db
+        db,
     ):
         return create_mock_inspection(
             image_id=image_id,
-            db=db
+            db=db,
         )
 
     monkeypatch.setattr(
         "app.main.analyse_damage_image",
-        fake_analyse_damage_image
+        fake_analyse_damage_image,
     )
 
     response = client.post(
@@ -430,7 +432,7 @@ def test_analyse_damage_image(
 
 
 def test_analyse_missing_damage_image(
-    client
+    client,
 ):
     response = client.post(
         "/damage-images/999999/analyse"
@@ -445,31 +447,31 @@ def test_analyse_missing_damage_image(
 
 def test_get_image_inspections(
     client,
-    monkeypatch
+    monkeypatch,
 ):
     vehicle_data = {
         "registration": "HIST12 CAR",
         "make": "BMW",
         "model": "M4",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "front-damage.jpg",
             b"fake-image-data",
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     upload_response = client.post(
         "/vehicles/hist12car/damage-image",
-        files=files
+        files=files,
     )
 
     image_id = (
@@ -478,16 +480,16 @@ def test_get_image_inspections(
 
     def fake_analyse_damage_image(
         image_id,
-        db
+        db,
     ):
         return create_mock_inspection(
             image_id=image_id,
-            db=db
+            db=db,
         )
 
     monkeypatch.setattr(
         "app.main.analyse_damage_image",
-        fake_analyse_damage_image
+        fake_analyse_damage_image,
     )
 
     analysis_response = client.post(
@@ -566,31 +568,31 @@ def test_get_image_inspections(
 
 def test_get_inspection_report(
     client,
-    monkeypatch
+    monkeypatch,
 ):
     vehicle_data = {
         "registration": "REPORT12 CAR",
         "make": "BMW",
         "model": "M3",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "damage.jpg",
             b"fake-image-data",
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     upload_response = client.post(
         "/vehicles/report12car/damage-image",
-        files=files
+        files=files,
     )
 
     image_id = (
@@ -599,16 +601,16 @@ def test_get_inspection_report(
 
     def fake_analyse_damage_image(
         image_id,
-        db
+        db,
     ):
         return create_mock_inspection(
             image_id=image_id,
-            db=db
+            db=db,
         )
 
     monkeypatch.setattr(
         "app.main.analyse_damage_image",
-        fake_analyse_damage_image
+        fake_analyse_damage_image,
     )
 
     analysis_response = client.post(
@@ -673,7 +675,7 @@ def test_get_inspection_report(
 
 
 def test_get_missing_inspection_report(
-    client
+    client,
 ):
     response = client.get(
         "/inspections/999999/report"
@@ -688,31 +690,31 @@ def test_get_missing_inspection_report(
 
 def test_get_vehicle_inspection_summary(
     client,
-    monkeypatch
+    monkeypatch,
 ):
     vehicle_data = {
         "registration": "SUM12 CAR",
         "make": "BMW",
         "model": "M4",
-        "year": 2024
+        "year": 2024,
     }
 
     client.post(
         "/vehicle",
-        json=vehicle_data
+        json=vehicle_data,
     )
 
     files = {
         "image": (
             "damage.jpg",
             b"fake-image-data",
-            "image/jpeg"
+            "image/jpeg",
         )
     }
 
     upload_response = client.post(
         "/vehicles/sum12car/damage-image",
-        files=files
+        files=files,
     )
 
     image_id = (
@@ -721,16 +723,16 @@ def test_get_vehicle_inspection_summary(
 
     def fake_analyse_damage_image(
         image_id,
-        db
+        db,
     ):
         return create_mock_inspection(
             image_id=image_id,
-            db=db
+            db=db,
         )
 
     monkeypatch.setattr(
         "app.main.analyse_damage_image",
-        fake_analyse_damage_image
+        fake_analyse_damage_image,
     )
 
     analysis_response = client.post(
@@ -798,7 +800,7 @@ def test_get_vehicle_inspection_summary(
 
 
 def test_get_missing_vehicle_inspection_summary(
-    client
+    client,
 ):
     response = client.get(
         "/vehicles/NOTREAL123/inspection-summary"
@@ -809,3 +811,113 @@ def test_get_missing_vehicle_inspection_summary(
     assert response.json()["detail"] == (
         "Vehicle not found"
     )
+
+
+def test_delete_damage_image(client):
+    vehicle_data = {
+        "registration": "DEL12 IMG",
+        "make": "BMW",
+        "model": "M3",
+        "year": 2024,
+    }
+
+    create_response = client.post(
+        "/vehicle",
+        json=vehicle_data,
+    )
+
+    assert create_response.status_code == 200
+
+    files = {
+        "image": (
+            "damage.jpg",
+            b"fake-image-data",
+            "image/jpeg",
+        )
+    }
+
+    upload_response = client.post(
+        "/vehicles/del12img/damage-image",
+        files=files,
+    )
+
+    assert upload_response.status_code == 200
+
+    image_id = (
+        upload_response.json()["image"]["id"]
+    )
+
+    delete_response = client.delete(
+        f"/damage-images/{image_id}"
+    )
+
+    assert delete_response.status_code == 200
+
+    assert (
+        delete_response.json()["message"]
+        == "Damage image deleted successfully"
+    )
+
+    get_response = client.get(
+        "/vehicles/del12img/damage-images"
+    )
+
+    assert get_response.status_code == 200
+
+    assert (
+        get_response.json()["images"]
+        == []
+    )
+
+
+def test_delete_vehicle_and_associated_data(
+    client,
+):
+    vehicle_data = {
+        "registration": "DEL99 CAR",
+        "make": "Audi",
+        "model": "RS3",
+        "year": 2024,
+    }
+
+    create_response = client.post(
+        "/vehicle",
+        json=vehicle_data,
+    )
+
+    assert create_response.status_code == 200
+
+    files = {
+        "image": (
+            "damage.jpg",
+            b"fake-image-data",
+            "image/jpeg",
+        )
+    }
+
+    upload_response = client.post(
+        "/vehicles/del99car/damage-image",
+        files=files,
+    )
+
+    assert upload_response.status_code == 200
+
+    delete_response = client.delete(
+        "/vehicles/del99car/full"
+    )
+
+    assert delete_response.status_code == 200
+
+    assert (
+        delete_response.json()["message"]
+        == (
+            "Vehicle and associated data "
+            "deleted successfully"
+        )
+    )
+
+    get_response = client.get(
+        "/vehicles/del99car"
+    )
+
+    assert get_response.status_code == 404

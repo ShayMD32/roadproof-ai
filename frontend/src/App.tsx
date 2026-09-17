@@ -5,11 +5,13 @@ import {
 } from 'react-router'
 
 import DashboardLayout from './components/layout/DashboardLayout'
+
 import Dashboard from './pages/Dashboard'
 import Vehicles from './pages/Vehicles'
 import VehicleDetails from './pages/VehicleDetails'
 import NewInspection from './pages/NewInspection'
 import Reports from './pages/Reports'
+import InspectionReport from './pages/InspectionReport'
 
 
 function App() {
@@ -40,11 +42,21 @@ function App() {
           path="/reports"
           element={<Reports />}
         />
+
+        <Route
+          path="/reports/:inspectionId"
+          element={<InspectionReport />}
+        />
       </Route>
 
       <Route
         path="*"
-        element={<Navigate to="/" replace />}
+        element={
+          <Navigate
+            to="/"
+            replace
+          />
+        }
       />
     </Routes>
   )

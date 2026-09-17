@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CarFront,
@@ -5,49 +6,53 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
-import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router'
 
-import { getVehicles } from '../api/client'
+import {
+  getDashboardSummary,
+} from '../api/client'
 
 
 function Dashboard() {
+  const navigate = useNavigate()
+
   const {
-    data: vehicles = [],
+    data,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ['vehicles'],
-    queryFn: getVehicles,
+    queryKey: ['dashboard-summary'],
+    queryFn: getDashboardSummary,
   })
+
 
   const metrics = [
     {
       title: 'Total Vehicles',
-      value: isLoading
-        ? '...'
-        : vehicles.length.toString(),
+      value: data?.total_vehicles ?? 0,
       description: 'Vehicles registered',
       icon: CarFront,
     },
     {
       title: 'Inspections',
-      value: '0',
+      value: data?.total_inspections ?? 0,
       description: 'AI inspections completed',
       icon: ScanLine,
     },
     {
       title: 'Damage Detected',
-      value: '0',
-      description: 'Vehicles with damage',
+      value: data?.damage_detected ?? 0,
+      description: 'Inspections with damage',
       icon: AlertTriangle,
     },
     {
       title: 'Clear Inspections',
-      value: '0',
+      value: data?.clear_inspections ?? 0,
       description: 'No damage detected',
       icon: ShieldCheck,
     },
   ]
+
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -82,19 +87,23 @@ function Dashboard() {
             Vehicle Intelligence
           </h1>
 
-          <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-            Monitor vehicles, AI damage inspections and
-            assessment results from one platform.
+          <p
+            className="
+              mt-2
+              max-w-2xl
+              text-sm
+              text-neutral-400
+            "
+          >
+            Monitor vehicles, AI damage inspections
+            and assessment results from one platform.
           </p>
-
-          {isError && (
-            <p className="mt-3 text-sm text-red-400">
-              Could not connect to the RoadProof backend.
-            </p>
-          )}
         </div>
 
         <button
+          onClick={() =>
+            navigate('/inspections/new')
+          }
           className="
             rounded-xl
             bg-white
@@ -109,9 +118,26 @@ function Dashboard() {
         </button>
       </div>
 
+      {isError && (
+        <div
+          className="
+            mt-6
+            rounded-xl
+            border border-red-500/20
+            bg-red-500/10
+            p-4
+          "
+        >
+          <p className="text-sm text-red-300">
+            Unable to load dashboard data.
+          </p>
+        </div>
+      )}
+
       <section
         className="
-          mt-8 grid gap-4
+          mt-8
+          grid gap-4
           sm:grid-cols-2
           xl:grid-cols-4
         "
@@ -129,7 +155,12 @@ function Dashboard() {
                 p-5
               "
             >
-              <div className="flex items-center justify-between">
+              <div
+                className="
+                  flex items-center
+                  justify-between
+                "
+              >
                 <p className="text-sm text-neutral-400">
                   {metric.title}
                 </p>
@@ -154,10 +185,18 @@ function Dashboard() {
                   tracking-tight
                 "
               >
-                {metric.value}
+                {isLoading
+                  ? '—'
+                  : metric.value}
               </p>
 
-              <p className="mt-1 text-xs text-neutral-500">
+              <p
+                className="
+                  mt-1
+                  text-xs
+                  text-neutral-500
+                "
+              >
                 {metric.description}
               </p>
             </div>
@@ -190,48 +229,107 @@ function Dashboard() {
                 Recent inspections
               </h2>
 
-              <p className="mt-1 text-xs text-neutral-500">
+              <p
+                className="
+                  mt-1
+                  text-xs text-neutral-500
+                "
+              >
                 Latest AI vehicle assessments
               </p>
             </div>
           </div>
 
-          <div
-            className="
-              flex min-h-72
-              flex-col items-center justify-center
-              px-6 text-center
-            "
-          >
+          {!data?.recent_inspections.length ? (
             <div
               className="
-                flex h-12 w-12
-                items-center justify-center
-                rounded-2xl
-                bg-white/[0.05]
+                flex min-h-72
+                flex-col items-center justify-center
+                px-6 text-center
               "
             >
               <ScanLine
                 size={22}
                 className="text-neutral-400"
               />
+
+              <h3
+                className="
+                  mt-4
+                  text-sm font-medium
+                "
+              >
+                No inspections yet
+              </h3>
+
+              <p
+                className="
+                  mt-2 max-w-xs
+                  text-xs leading-5
+                  text-neutral-500
+                "
+              >
+                Upload a vehicle damage image and
+                run an AI inspection to see results here.
+              </p>
             </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {data.recent_inspections.map(
+                (inspection) => (
+                  <button
+                    key={inspection.id}
+                    onClick={() =>
+                      navigate(
+                        `/reports/${inspection.id}`,
+                      )
+                    }
+                    className="
+                      flex w-full
+                      items-center justify-between
+                      px-6 py-4
+                      text-left
+                      transition
+                      hover:bg-white/[0.03]
+                    "
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {inspection.make}{' '}
+                        {inspection.model}
+                      </p>
 
-            <h3 className="mt-4 text-sm font-medium">
-              No inspections yet
-            </h3>
+                      <p
+                        className="
+                          mt-1
+                          text-xs
+                          text-neutral-500
+                        "
+                      >
+                        {inspection.registration}
+                      </p>
+                    </div>
 
-            <p
-              className="
-                mt-2 max-w-xs
-                text-xs leading-5
-                text-neutral-500
-              "
-            >
-              Upload a vehicle damage image and run an
-              AI inspection to see results here.
-            </p>
-          </div>
+                    <div className="text-right">
+                      <p className="text-sm capitalize">
+                        {inspection.severity ?? 'None'}
+                      </p>
+
+                      <p
+                        className="
+                          mt-1
+                          text-xs
+                          text-neutral-500
+                        "
+                      >
+                        Inspection #{inspection.id}
+                      </p>
+                    </div>
+                  </button>
+                ),
+              )}
+            </div>
+          )}
         </div>
 
         <div
@@ -246,11 +344,22 @@ function Dashboard() {
             AI Engine
           </p>
 
-          <p className="mt-1 text-xs text-neutral-500">
+          <p
+            className="
+              mt-1
+              text-xs
+              text-neutral-500
+            "
+          >
             Damage detection service
           </p>
 
-          <div className="mt-8 flex items-center gap-3">
+          <div
+            className="
+              mt-8
+              flex items-center gap-3
+            "
+          >
             <span
               className="
                 h-2.5 w-2.5
@@ -264,7 +373,12 @@ function Dashboard() {
                 Model operational
               </p>
 
-              <p className="text-xs text-neutral-500">
+              <p
+                className="
+                  text-xs
+                  text-neutral-500
+                "
+              >
                 Ready for analysis
               </p>
             </div>
@@ -275,37 +389,78 @@ function Dashboard() {
               <div
                 className="
                   flex justify-between
-                  text-xs text-neutral-500
+                  text-xs
+                  text-neutral-500
                 "
               >
-                <span>Confidence threshold</span>
-                <span>25%</span>
+                <span>
+                  Confidence threshold
+                </span>
+
+                <span>
+                  1% debug
+                </span>
               </div>
 
               <div
                 className="
-                  mt-2 h-1.5
+                  mt-2
+                  h-1.5
                   overflow-hidden
                   rounded-full
                   bg-white/5
                 "
               >
-                <div className="h-full w-1/4 bg-white" />
+                <div
+                  className="
+                    h-full
+                    w-[1%]
+                    min-w-[3px]
+                    bg-white
+                  "
+                />
               </div>
             </div>
 
             <div
               className="
-                border-t border-white/10
+                border-t
+                border-white/10
                 pt-4
               "
             >
-              <p className="text-xs text-neutral-500">
+              <p
+                className="
+                  text-xs
+                  text-neutral-500
+                "
+              >
                 Model
               </p>
 
               <p className="mt-1 text-sm">
                 YOLOv11 Vehicle Damage
+              </p>
+            </div>
+
+            <div
+              className="
+                border-t
+                border-white/10
+                pt-4
+              "
+            >
+              <p
+                className="
+                  text-xs
+                  text-neutral-500
+                "
+              >
+                Assessment mode
+              </p>
+
+              <p className="mt-1 text-sm">
+                AI-assisted inspection
               </p>
             </div>
           </div>

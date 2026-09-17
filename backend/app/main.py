@@ -680,3 +680,142 @@ def get_vehicle_inspection_summary(
             else None
         ),
     }
+@app.get("/dashboard/summary")
+def get_dashboard_summary(
+    db: Session = Depends(get_db)
+):
+    vehicles = db.query(VehicleDB).all()
+    inspections = db.query(InspectionDB).all()
+
+    total_vehicles = len(vehicles)
+    total_inspections = len(inspections)
+
+    damage_detected = sum(
+        1
+        for inspection in inspections
+        if inspection.damage_detected is True
+    )
+
+    clear_inspections = sum(
+        1
+        for inspection in inspections
+        if inspection.damage_detected is False
+    )
+
+    recent_inspections = (
+        db.query(InspectionDB)
+        .order_by(
+            InspectionDB.created_at.desc()
+        )
+        .limit(5)
+        .all()
+    )
+
+    return {
+        "total_vehicles": total_vehicles,
+        "total_inspections": total_inspections,
+        "damage_detected": damage_detected,
+        "clear_inspections": clear_inspections,
+        "recent_inspections": [
+            {
+                "id": inspection.id,
+                "damage_detected": (
+                    inspection.damage_detected
+                ),
+                "damage_count": (
+                    inspection.damage_count
+                ),
+                "severity": inspection.severity,
+                "severity_score": (
+                    inspection.severity_score
+                ),
+                "created_at": (
+                    inspection.created_at
+                ),
+                "registration": (
+                    inspection
+                    .damage_image
+                    .vehicle
+                    .registration
+                ),
+                "make": (
+                    inspection
+                    .damage_image
+                    .vehicle
+                    .make
+                ),
+                "model": (
+                    inspection
+                    .damage_image
+                    .vehicle
+                    .model
+                ),
+            }
+            for inspection in recent_inspections
+        ]
+    }
+@app.delete("/damage-images/{image_id}")
+def delete_damage_image(
+    image_id: int,
+    db: Session = Depends(get_db)
+):
+    damage_image = db.query(DamageImageDB).filter(
+        DamageImageDB.id == image_id
+    ).first()
+
+    if not damage_image:
+        raise HTTPException(
+            status_code=404,
+            detail="Damage image not found"
+        )
+
+    file_path = damage_image.file_path
+
+    db.delete(damage_image)
+    db.commit()
+
+    if file_path and os.path.exists(file_path):
+        os.remove(file_path)
+
+    return {
+        "message": "Damage image deleted successfully"
+    }
+
+
+@app.delete("/vehicles/{registration}/full")
+def delete_vehicle_and_data(
+    registration: str,
+    db: Session = Depends(get_db)
+):
+    normalised_registration = normalise_registration(
+        registration
+    )
+
+    vehicle = db.query(VehicleDB).filter(
+        VehicleDB.registration == normalised_registration
+    ).first()
+
+    if not vehicle:
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
+
+    image_paths = [
+        image.file_path
+        for image in vehicle.damage_images
+    ]
+
+    db.delete(vehicle)
+    db.commit()
+
+    for file_path in image_paths:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+    return {
+        "message": (
+            "Vehicle and associated data "
+            "deleted successfully"
+        )
+    }
