@@ -1,7 +1,32 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+
+
+class UserRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+
+
+class UserLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: str
+    is_active: bool
+    created_at: datetime
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse
 
 
 class VehicleReport(BaseModel):
@@ -86,6 +111,7 @@ class VehicleInspectionSummary(BaseModel):
     total_inspections: int
     damage_detected: bool
     total_damage_detections: int
+
     latest_severity: str | None = None
     latest_severity_score: float | None = None
     latest_inspection_id: int | None = None

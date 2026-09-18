@@ -13,20 +13,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.database import (
-    Base,
-    SessionLocal,
-    engine,
+from app.auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
 )
+
+from app.database import get_db
 
 from app.models import (
     DamageImageDB,
     InspectionDB,
+    UserDB,
     VehicleDB,
 )
 
 from app.schemas import (
     InspectionReportResponse,
+    TokenResponse,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
     VehicleInspectionSummary,
 )
 
@@ -34,8 +42,6 @@ from app.services.inspection_service import (
     analyse_damage_image,
 )
 
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -57,15 +63,6 @@ class Vehicle(BaseModel):
     make: str
     model: str
     year: int
-
-
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def normalise_registration(
@@ -130,6 +127,18 @@ def get_model_thresholds(
     return thresholds
 
 
+def user_to_dict(
+    user: UserDB,
+) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "created_at": user.created_at,
+    }
+
+
 @app.get("/")
 def home():
     return {
@@ -145,6 +154,164 @@ def health():
         "status": "Server Running",
         "version": "1.0",
     }
+
+
+# --------------------------------------------------
+# Authentication
+# --------------------------------------------------
+
+
+@app.post(
+    "/auth/register",
+    response_model=UserResponse,
+    status_code=201,
+)
+def register_user(
+    request: UserRegisterRequest,
+    db: Session = Depends(get_db),
+):
+    email = (
+        str(request.email)
+        .strip()
+        .lower()
+    )
+
+    full_name = (
+        request.full_name
+        .strip()
+    )
+
+    if not full_name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Full name is required"
+            ),
+        )
+
+    if len(request.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Password must be at "
+                "least 8 characters"
+            ),
+        )
+
+    existing_user = (
+        db.query(UserDB)
+        .filter(
+            UserDB.email == email
+        )
+        .first()
+    )
+
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An account with this "
+                "email already exists"
+            ),
+        )
+
+    user = UserDB(
+        email=email,
+        full_name=full_name,
+        password_hash=hash_password(
+            request.password
+        ),
+        is_active=True,
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user_to_dict(user)
+
+
+@app.post(
+    "/auth/login",
+    response_model=TokenResponse,
+)
+def login_user(
+    request: UserLoginRequest,
+    db: Session = Depends(get_db),
+):
+    email = (
+        str(request.email)
+        .strip()
+        .lower()
+    )
+
+    user = (
+        db.query(UserDB)
+        .filter(
+            UserDB.email == email
+        )
+        .first()
+    )
+
+    if (
+        user is None
+        or not verify_password(
+            request.password,
+            user.password_hash,
+        )
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid email or password"
+            ),
+            headers={
+                "WWW-Authenticate":
+                    "Bearer"
+            },
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "User account is inactive"
+            ),
+        )
+
+    access_token = (
+        create_access_token(
+            user.id
+        )
+    )
+
+    return {
+        "access_token":
+            access_token,
+        "token_type":
+            "bearer",
+        "user":
+            user_to_dict(user),
+    }
+
+
+@app.get(
+    "/auth/me",
+    response_model=UserResponse,
+)
+def get_me(
+    current_user: UserDB = Depends(
+        get_current_user
+    ),
+):
+    return user_to_dict(
+        current_user
+    )
+
+
+# --------------------------------------------------
+# Vehicles
+# --------------------------------------------------
 
 
 @app.post("/vehicle")
@@ -466,13 +633,12 @@ async def upload_damage_image(
             normalised_registration
         ),
         "image": {
-            "id": damage_image.id,
-            "filename": (
-                damage_image.filename
-            ),
-            "file_path": (
-                damage_image.file_path
-            ),
+            "id":
+                damage_image.id,
+            "filename":
+                damage_image.filename,
+            "file_path":
+                damage_image.file_path,
         },
     }
 
@@ -515,11 +681,16 @@ def get_damage_images(
     )
 
     return {
-        "registration": (
-            normalised_registration
-        ),
-        "images": damage_images,
+        "registration":
+            normalised_registration,
+        "images":
+            damage_images,
     }
+
+
+# --------------------------------------------------
+# Inspections
+# --------------------------------------------------
 
 
 @app.post(
@@ -586,86 +757,59 @@ def analyse_image(
             "successfully!"
         ),
         "inspection": {
-            "id": inspection.id,
-            "image_id": (
-                inspection.damage_image_id
-            ),
-            "status": (
-                inspection.status
-            ),
-            "damage_detected": (
-                inspection.damage_detected
-            ),
-            "damage_count": (
-                inspection.damage_count
-            ),
-            "highest_confidence": (
-                inspection
-                .highest_confidence
-            ),
-            "severity": (
-                inspection.severity
-            ),
-            "severity_score": (
-                inspection.severity_score
-            ),
-            "severity_factors": (
-                severity_factors
-            ),
-            "review": review,
-            "model_thresholds": (
-                model_thresholds
-            ),
+            "id":
+                inspection.id,
+            "image_id":
+                inspection.damage_image_id,
+            "status":
+                inspection.status,
+            "damage_detected":
+                inspection.damage_detected,
+            "damage_count":
+                inspection.damage_count,
+            "highest_confidence":
+                inspection.highest_confidence,
+            "severity":
+                inspection.severity,
+            "severity_score":
+                inspection.severity_score,
+            "severity_factors":
+                severity_factors,
+            "review":
+                review,
+            "model_thresholds":
+                model_thresholds,
             "model": {
-                "repository": (
-                    inspection
-                    .model_repository
-                ),
-                "checkpoint": (
-                    inspection
-                    .model_checkpoint
-                ),
-                "confidence_threshold": (
-                    inspection
-                    .confidence_threshold
-                ),
+                "repository":
+                    inspection.model_repository,
+                "checkpoint":
+                    inspection.model_checkpoint,
+                "confidence_threshold":
+                    inspection.confidence_threshold,
             },
             "detections": [
                 {
-                    "id": (
-                        detection.id
-                    ),
-                    "damage_type": (
-                        detection
-                        .damage_type
-                    ),
-                    "confidence": (
-                        detection
-                        .confidence
-                    ),
+                    "id":
+                        detection.id,
+                    "damage_type":
+                        detection.damage_type,
+                    "confidence":
+                        detection.confidence,
                     "bounding_box": {
-                        "x1": (
-                            detection.x1
-                        ),
-                        "y1": (
-                            detection.y1
-                        ),
-                        "x2": (
-                            detection.x2
-                        ),
-                        "y2": (
-                            detection.y2
-                        ),
+                        "x1":
+                            detection.x1,
+                        "y1":
+                            detection.y1,
+                        "x2":
+                            detection.x2,
+                        "y2":
+                            detection.y2,
                     },
                     "segmentation": (
                         json.loads(
-                            detection
-                            .segmentation
+                            detection.segmentation
                         )
-                        if (
-                            detection
-                            .segmentation
-                        )
+                        if detection.segmentation
                         else []
                     ),
                 }
@@ -716,102 +860,91 @@ def get_image_inspections(
     )
 
     return {
-        "image_id": image_id,
-        "inspection_count": (
-            len(inspections)
-        ),
+        "image_id":
+            image_id,
+
+        "inspection_count":
+            len(inspections),
+
         "inspections": [
             {
-                "id": inspection.id,
-                "status": (
-                    inspection.status
-                ),
-                "damage_detected": (
-                    inspection
-                    .damage_detected
-                ),
-                "damage_count": (
-                    inspection.damage_count
-                ),
-                "highest_confidence": (
-                    inspection
-                    .highest_confidence
-                ),
-                "severity": (
-                    inspection.severity
-                ),
-                "severity_score": (
-                    inspection
-                    .severity_score
-                ),
-                "severity_factors": (
+                "id":
+                    inspection.id,
+
+                "status":
+                    inspection.status,
+
+                "damage_detected":
+                    inspection.damage_detected,
+
+                "damage_count":
+                    inspection.damage_count,
+
+                "highest_confidence":
+                    inspection.highest_confidence,
+
+                "severity":
+                    inspection.severity,
+
+                "severity_score":
+                    inspection.severity_score,
+
+                "severity_factors":
                     get_severity_factors(
                         inspection
-                    )
-                ),
-                "review": (
+                    ),
+
+                "review":
                     get_review_metadata(
                         inspection
-                    )
-                ),
-                "model_thresholds": (
+                    ),
+
+                "model_thresholds":
                     get_model_thresholds(
                         inspection
-                    )
-                ),
-                "created_at": (
-                    inspection.created_at
-                ),
+                    ),
+
+                "created_at":
+                    inspection.created_at,
+
                 "model": {
-                    "repository": (
-                        inspection
-                        .model_repository
-                    ),
-                    "checkpoint": (
-                        inspection
-                        .model_checkpoint
-                    ),
-                    "confidence_threshold": (
-                        inspection
-                        .confidence_threshold
-                    ),
+                    "repository":
+                        inspection.model_repository,
+
+                    "checkpoint":
+                        inspection.model_checkpoint,
+
+                    "confidence_threshold":
+                        inspection.confidence_threshold,
                 },
+
                 "detections": [
                     {
-                        "id": (
-                            detection.id
-                        ),
-                        "damage_type": (
-                            detection
-                            .damage_type
-                        ),
-                        "confidence": (
-                            detection
-                            .confidence
-                        ),
+                        "id":
+                            detection.id,
+
+                        "damage_type":
+                            detection.damage_type,
+
+                        "confidence":
+                            detection.confidence,
+
                         "bounding_box": {
-                            "x1": (
-                                detection.x1
-                            ),
-                            "y1": (
-                                detection.y1
-                            ),
-                            "x2": (
-                                detection.x2
-                            ),
-                            "y2": (
-                                detection.y2
-                            ),
+                            "x1":
+                                detection.x1,
+                            "y1":
+                                detection.y1,
+                            "x2":
+                                detection.x2,
+                            "y2":
+                                detection.y2,
                         },
+
                         "segmentation": (
                             json.loads(
-                                detection
-                                .segmentation
+                                detection.segmentation
                             )
-                            if (
-                                detection
-                                .segmentation
-                            )
+                            if detection.segmentation
                             else []
                         ),
                     }
@@ -881,114 +1014,102 @@ def get_inspection_report(
 
     return {
         "report": {
-            "inspection_id": (
-                inspection.id
-            ),
-            "created_at": (
-                inspection.created_at
-            ),
-            "status": (
-                inspection.status
-            ),
+            "inspection_id":
+                inspection.id,
+
+            "created_at":
+                inspection.created_at,
+
+            "status":
+                inspection.status,
+
             "vehicle": {
-                "registration": (
-                    vehicle.registration
-                ),
-                "make": vehicle.make,
-                "model": vehicle.model,
-                "year": vehicle.year,
+                "registration":
+                    vehicle.registration,
+                "make":
+                    vehicle.make,
+                "model":
+                    vehicle.model,
+                "year":
+                    vehicle.year,
             },
+
             "image": {
-                "id": (
-                    damage_image.id
-                ),
-                "filename": (
-                    damage_image.filename
-                ),
+                "id":
+                    damage_image.id,
+                "filename":
+                    damage_image.filename,
             },
+
             "summary": {
-                "damage_detected": (
-                    inspection
-                    .damage_detected
-                ),
-                "damage_count": (
-                    inspection
-                    .damage_count
-                ),
-                "highest_confidence": (
-                    inspection
-                    .highest_confidence
-                ),
-                "severity": (
-                    inspection.severity
-                ),
-                "severity_score": (
-                    inspection
-                    .severity_score
-                ),
-                "severity_factors": (
-                    severity_factors
-                ),
-                "review": review,
-                "model_thresholds": (
-                    model_thresholds
-                ),
+                "damage_detected":
+                    inspection.damage_detected,
+
+                "damage_count":
+                    inspection.damage_count,
+
+                "highest_confidence":
+                    inspection.highest_confidence,
+
+                "severity":
+                    inspection.severity,
+
+                "severity_score":
+                    inspection.severity_score,
+
+                "severity_factors":
+                    severity_factors,
+
+                "review":
+                    review,
+
+                "model_thresholds":
+                    model_thresholds,
             },
+
             "detections": [
                 {
-                    "id": (
-                        detection.id
-                    ),
-                    "damage_type": (
-                        detection
-                        .damage_type
-                    ),
-                    "confidence": (
-                        detection
-                        .confidence
-                    ),
+                    "id":
+                        detection.id,
+
+                    "damage_type":
+                        detection.damage_type,
+
+                    "confidence":
+                        detection.confidence,
+
                     "bounding_box": {
-                        "x1": (
-                            detection.x1
-                        ),
-                        "y1": (
-                            detection.y1
-                        ),
-                        "x2": (
-                            detection.x2
-                        ),
-                        "y2": (
-                            detection.y2
-                        ),
+                        "x1":
+                            detection.x1,
+                        "y1":
+                            detection.y1,
+                        "x2":
+                            detection.x2,
+                        "y2":
+                            detection.y2,
                     },
+
                     "segmentation": (
                         json.loads(
-                            detection
-                            .segmentation
+                            detection.segmentation
                         )
-                        if (
-                            detection
-                            .segmentation
-                        )
+                        if detection.segmentation
                         else []
                     ),
                 }
                 for detection
                 in inspection.detections
             ],
+
             "model": {
-                "repository": (
-                    inspection
-                    .model_repository
-                ),
-                "checkpoint": (
-                    inspection
-                    .model_checkpoint
-                ),
-                "confidence_threshold": (
-                    inspection
-                    .confidence_threshold
-                ),
+                "repository":
+                    inspection.model_repository,
+
+                "checkpoint":
+                    inspection.model_checkpoint,
+
+                "confidence_threshold":
+                    inspection.confidence_threshold,
             },
         },
     }
@@ -1070,45 +1191,54 @@ def get_vehicle_inspection_summary(
         )
 
     return {
-        "registration": (
-            vehicle.registration
-        ),
+        "registration":
+            vehicle.registration,
+
         "vehicle": {
-            "registration": (
-                vehicle.registration
-            ),
-            "make": vehicle.make,
-            "model": vehicle.model,
-            "year": vehicle.year,
+            "registration":
+                vehicle.registration,
+            "make":
+                vehicle.make,
+            "model":
+                vehicle.model,
+            "year":
+                vehicle.year,
         },
-        "total_images": len(
-            vehicle.damage_images
-        ),
-        "total_inspections": len(
-            all_inspections
-        ),
-        "damage_detected": (
-            damage_detected
-        ),
-        "total_damage_detections": (
-            total_damage_detections
-        ),
+
+        "total_images":
+            len(
+                vehicle.damage_images
+            ),
+
+        "total_inspections":
+            len(
+                all_inspections
+            ),
+
+        "damage_detected":
+            damage_detected,
+
+        "total_damage_detections":
+            total_damage_detections,
+
         "latest_severity": (
             latest_inspection.severity
             if latest_inspection
             else None
         ),
+
         "latest_severity_score": (
-            latest_inspection
-            .severity_score
+            latest_inspection.severity_score
             if latest_inspection
             else None
         ),
+
         "latest_inspection_id": (
             latest_inspection.id
             if latest_inspection
             else None
         ),
+
         "latest_inspection_confidence": (
             latest_review.get(
                 "inspection_confidence"
@@ -1116,6 +1246,7 @@ def get_vehicle_inspection_summary(
             if latest_review
             else None
         ),
+
         "latest_manual_review_required": (
             latest_review.get(
                 "manual_review_required"
@@ -1124,6 +1255,11 @@ def get_vehicle_inspection_summary(
             else None
         ),
     }
+
+
+# --------------------------------------------------
+# Dashboard
+# --------------------------------------------------
 
 
 @app.get("/dashboard/summary")
@@ -1199,39 +1335,38 @@ def get_dashboard_summary(
     )
 
     return {
-        "total_vehicles": (
-            total_vehicles
-        ),
-        "total_inspections": (
-            total_inspections
-        ),
-        "damage_detected": (
-            damage_detected
-        ),
-        "clear_inspections": (
-            clear_inspections
-        ),
-        "manual_review_count": (
-            manual_review_count
-        ),
+        "total_vehicles":
+            total_vehicles,
+
+        "total_inspections":
+            total_inspections,
+
+        "damage_detected":
+            damage_detected,
+
+        "clear_inspections":
+            clear_inspections,
+
+        "manual_review_count":
+            manual_review_count,
+
         "recent_inspections": [
             {
-                "id": inspection.id,
-                "damage_detected": (
-                    inspection
-                    .damage_detected
-                ),
-                "damage_count": (
-                    inspection
-                    .damage_count
-                ),
-                "severity": (
-                    inspection.severity
-                ),
-                "severity_score": (
-                    inspection
-                    .severity_score
-                ),
+                "id":
+                    inspection.id,
+
+                "damage_detected":
+                    inspection.damage_detected,
+
+                "damage_count":
+                    inspection.damage_count,
+
+                "severity":
+                    inspection.severity,
+
+                "severity_score":
+                    inspection.severity_score,
+
                 "inspection_confidence": (
                     (
                         get_review_metadata(
@@ -1241,6 +1376,7 @@ def get_dashboard_summary(
                         "inspection_confidence"
                     )
                 ),
+
                 "manual_review_required": (
                     (
                         get_review_metadata(
@@ -1250,33 +1386,37 @@ def get_dashboard_summary(
                         "manual_review_required"
                     )
                 ),
-                "created_at": (
-                    inspection
-                    .created_at
-                ),
-                "registration": (
-                    inspection
-                    .damage_image
-                    .vehicle
-                    .registration
-                ),
-                "make": (
+
+                "created_at":
+                    inspection.created_at,
+
+                "registration":
                     inspection
                     .damage_image
                     .vehicle
-                    .make
-                ),
-                "model": (
+                    .registration,
+
+                "make":
                     inspection
                     .damage_image
                     .vehicle
-                    .model
-                ),
+                    .make,
+
+                "model":
+                    inspection
+                    .damage_image
+                    .vehicle
+                    .model,
             }
             for inspection
             in recent_inspections
         ],
     }
+
+
+# --------------------------------------------------
+# Delete operations
+# --------------------------------------------------
 
 
 @app.delete(
