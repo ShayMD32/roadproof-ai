@@ -31,13 +31,31 @@ class DamageDetectionReport(BaseModel):
     segmentation: list[dict[str, Any]]
 
 
+class ReviewSummary(BaseModel):
+    inspection_confidence: str
+    manual_review_required: bool
+    manual_review_reasons: list[str]
+    weak_signal_count: int
+    highest_candidate_confidence: float | None = None
+
+
+class ModelThresholds(BaseModel):
+    scan_threshold: float
+    acceptance_threshold: float
+    review_signal_threshold: float
+
+
 class SeveritySummary(BaseModel):
     damage_detected: bool
     damage_count: int
     highest_confidence: float | None = None
     severity: str | None = None
     severity_score: float | None = None
+
     severity_factors: dict[str, Any]
+
+    review: ReviewSummary | None = None
+    model_thresholds: ModelThresholds | None = None
 
 
 class ModelReport(BaseModel):
@@ -71,3 +89,6 @@ class VehicleInspectionSummary(BaseModel):
     latest_severity: str | None = None
     latest_severity_score: float | None = None
     latest_inspection_id: int | None = None
+
+    latest_inspection_confidence: str | None = None
+    latest_manual_review_required: bool | None = None

@@ -1,29 +1,28 @@
-import os
 import json
+import os
 from uuid import uuid4
 
 from fastapi import (
+    Depends,
     FastAPI,
+    File,
     HTTPException,
     UploadFile,
-    File,
-    Depends,
 )
 from fastapi.middleware.cors import CORSMiddleware
-
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import (
+    Base,
     SessionLocal,
     engine,
-    Base,
 )
 
 from app.models import (
-    VehicleDB,
     DamageImageDB,
     InspectionDB,
+    VehicleDB,
 )
 
 from app.schemas import (
@@ -69,14 +68,74 @@ def get_db():
         db.close()
 
 
-def normalise_registration(registration: str):
-    return registration.replace(" ", "").upper()
+def normalise_registration(
+    registration: str,
+):
+    return (
+        registration
+        .replace(" ", "")
+        .upper()
+    )
+
+
+def get_severity_factors(
+    inspection: InspectionDB,
+) -> dict:
+    if not inspection.severity_factors:
+        return {}
+
+    try:
+        return json.loads(
+            inspection.severity_factors
+        )
+    except json.JSONDecodeError:
+        return {}
+
+
+def get_review_metadata(
+    inspection: InspectionDB,
+) -> dict | None:
+    factors = get_severity_factors(
+        inspection
+    )
+
+    review = factors.get("review")
+
+    if not isinstance(
+        review,
+        dict,
+    ):
+        return None
+
+    return review
+
+
+def get_model_thresholds(
+    inspection: InspectionDB,
+) -> dict | None:
+    factors = get_severity_factors(
+        inspection
+    )
+
+    thresholds = factors.get(
+        "model_thresholds"
+    )
+
+    if not isinstance(
+        thresholds,
+        dict,
+    ):
+        return None
+
+    return thresholds
 
 
 @app.get("/")
 def home():
     return {
-        "message": "Welcome to RoadProof AI! 🚗"
+        "message": (
+            "Welcome to RoadProof AI! 🚗"
+        )
     }
 
 
@@ -93,22 +152,33 @@ def create_vehicle(
     vehicle: Vehicle,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        vehicle.registration
+    normalised_registration = (
+        normalise_registration(
+            vehicle.registration
+        )
     )
 
-    existing_vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    existing_vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if existing_vehicle:
         raise HTTPException(
             status_code=409,
-            detail="Vehicle already exists",
+            detail=(
+                "Vehicle already exists"
+            ),
         )
 
     new_vehicle = VehicleDB(
-        registration=normalised_registration,
+        registration=(
+            normalised_registration
+        ),
         make=vehicle.make,
         model=vehicle.model,
         year=vehicle.year,
@@ -119,7 +189,9 @@ def create_vehicle(
     db.refresh(new_vehicle)
 
     return {
-        "message": "Vehicle received successfully!",
+        "message": (
+            "Vehicle received successfully!"
+        ),
         "vehicle": new_vehicle,
     }
 
@@ -128,21 +200,33 @@ def create_vehicle(
 def get_vehicles(
     db: Session = Depends(get_db),
 ):
-    return db.query(VehicleDB).all()
+    return (
+        db.query(VehicleDB)
+        .all()
+    )
 
 
-@app.get("/vehicles/{registration}")
+@app.get(
+    "/vehicles/{registration}"
+)
 def get_vehicle(
     registration: str,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -153,19 +237,28 @@ def get_vehicle(
     return vehicle
 
 
-@app.put("/vehicles/{registration}")
+@app.put(
+    "/vehicles/{registration}"
+)
 def update_vehicle(
     registration: str,
     updated_vehicle: Vehicle,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -173,47 +266,79 @@ def update_vehicle(
             detail="Vehicle not found",
         )
 
-    new_registration = normalise_registration(
-        updated_vehicle.registration
+    new_registration = (
+        normalise_registration(
+            updated_vehicle.registration
+        )
     )
 
-    duplicate_vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == new_registration,
-        VehicleDB.id != vehicle.id,
-    ).first()
+    duplicate_vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == new_registration,
+            VehicleDB.id
+            != vehicle.id,
+        )
+        .first()
+    )
 
     if duplicate_vehicle:
         raise HTTPException(
             status_code=409,
-            detail="Vehicle already exists",
+            detail=(
+                "Vehicle already exists"
+            ),
         )
 
-    vehicle.registration = new_registration
-    vehicle.make = updated_vehicle.make
-    vehicle.model = updated_vehicle.model
-    vehicle.year = updated_vehicle.year
+    vehicle.registration = (
+        new_registration
+    )
+
+    vehicle.make = (
+        updated_vehicle.make
+    )
+
+    vehicle.model = (
+        updated_vehicle.model
+    )
+
+    vehicle.year = (
+        updated_vehicle.year
+    )
 
     db.commit()
     db.refresh(vehicle)
 
     return {
-        "message": "Vehicle updated successfully!",
+        "message": (
+            "Vehicle updated successfully!"
+        ),
         "vehicle": vehicle,
     }
 
 
-@app.delete("/vehicles/{registration}")
+@app.delete(
+    "/vehicles/{registration}"
+)
 def delete_vehicle(
     registration: str,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -225,24 +350,35 @@ def delete_vehicle(
     db.commit()
 
     return {
-        "message": "Vehicle deleted successfully!",
+        "message": (
+            "Vehicle deleted successfully!"
+        ),
         "vehicle": vehicle,
     }
 
 
-@app.post("/vehicles/{registration}/damage-image")
+@app.post(
+    "/vehicles/{registration}/damage-image"
+)
 async def upload_damage_image(
     registration: str,
     image: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -255,17 +391,28 @@ async def upload_damage_image(
         "image/png",
     ]
 
-    if image.content_type not in allowed_types:
+    if (
+        image.content_type
+        not in allowed_types
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Only JPEG and PNG images are allowed",
+            detail=(
+                "Only JPEG and PNG "
+                "images are allowed"
+            ),
         )
 
     contents = await image.read()
 
-    max_file_size = 5 * 1024 * 1024
+    max_file_size = (
+        5 * 1024 * 1024
+    )
 
-    if len(contents) > max_file_size:
+    if (
+        len(contents)
+        > max_file_size
+    ):
         raise HTTPException(
             status_code=413,
             detail=(
@@ -282,15 +429,22 @@ async def upload_damage_image(
     )
 
     unique_filename = (
-        f"{uuid4()}_{image.filename}"
+        f"{uuid4()}_"
+        f"{image.filename}"
     )
 
     file_path = os.path.join(
         upload_directory,
-        f"{normalised_registration}_{unique_filename}",
+        (
+            f"{normalised_registration}_"
+            f"{unique_filename}"
+        ),
     )
 
-    with open(file_path, "wb") as file:
+    with open(
+        file_path,
+        "wb",
+    ) as file:
         file.write(contents)
 
     damage_image = DamageImageDB(
@@ -304,28 +458,46 @@ async def upload_damage_image(
     db.refresh(damage_image)
 
     return {
-        "message": "Damage image uploaded successfully!",
-        "registration": normalised_registration,
+        "message": (
+            "Damage image uploaded "
+            "successfully!"
+        ),
+        "registration": (
+            normalised_registration
+        ),
         "image": {
             "id": damage_image.id,
-            "filename": damage_image.filename,
-            "file_path": damage_image.file_path,
+            "filename": (
+                damage_image.filename
+            ),
+            "file_path": (
+                damage_image.file_path
+            ),
         },
     }
 
 
-@app.get("/vehicles/{registration}/damage-images")
+@app.get(
+    "/vehicles/{registration}/damage-images"
+)
 def get_damage_images(
     registration: str,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -333,268 +505,489 @@ def get_damage_images(
             detail="Vehicle not found",
         )
 
-    damage_images = db.query(
-        DamageImageDB
-    ).filter(
-        DamageImageDB.vehicle_id == vehicle.id
-    ).all()
+    damage_images = (
+        db.query(DamageImageDB)
+        .filter(
+            DamageImageDB.vehicle_id
+            == vehicle.id
+        )
+        .all()
+    )
 
     return {
-        "registration": normalised_registration,
+        "registration": (
+            normalised_registration
+        ),
         "images": damage_images,
     }
 
 
-@app.post("/damage-images/{image_id}/analyse")
+@app.post(
+    "/damage-images/{image_id}/analyse"
+)
 def analyse_image(
     image_id: int,
     db: Session = Depends(get_db),
 ):
-    damage_image = db.query(
-        DamageImageDB
-    ).filter(
-        DamageImageDB.id == image_id
-    ).first()
+    damage_image = (
+        db.query(DamageImageDB)
+        .filter(
+            DamageImageDB.id
+            == image_id
+        )
+        .first()
+    )
 
     if not damage_image:
         raise HTTPException(
             status_code=404,
-            detail="Damage image not found",
+            detail=(
+                "Damage image not found"
+            ),
         )
 
     try:
-        inspection = analyse_damage_image(
-            image_id=image_id,
-            db=db,
+        inspection = (
+            analyse_damage_image(
+                image_id=image_id,
+                db=db,
+            )
         )
 
     except Exception:
         raise HTTPException(
             status_code=500,
-            detail="Damage analysis failed",
+            detail=(
+                "Damage analysis failed"
+            ),
         )
 
+    severity_factors = (
+        get_severity_factors(
+            inspection
+        )
+    )
+
+    review = (
+        get_review_metadata(
+            inspection
+        )
+    )
+
+    model_thresholds = (
+        get_model_thresholds(
+            inspection
+        )
+    )
+
     return {
-        "message": "Damage analysis completed successfully!",
+        "message": (
+            "Damage analysis completed "
+            "successfully!"
+        ),
         "inspection": {
             "id": inspection.id,
-            "image_id": inspection.damage_image_id,
-            "status": inspection.status,
-            "damage_detected": inspection.damage_detected,
-            "damage_count": inspection.damage_count,
-            "highest_confidence": inspection.highest_confidence,
-            "severity": inspection.severity,
-            "severity_score": inspection.severity_score,
+            "image_id": (
+                inspection.damage_image_id
+            ),
+            "status": (
+                inspection.status
+            ),
+            "damage_detected": (
+                inspection.damage_detected
+            ),
+            "damage_count": (
+                inspection.damage_count
+            ),
+            "highest_confidence": (
+                inspection
+                .highest_confidence
+            ),
+            "severity": (
+                inspection.severity
+            ),
+            "severity_score": (
+                inspection.severity_score
+            ),
             "severity_factors": (
-                json.loads(inspection.severity_factors)
-                if inspection.severity_factors
-                else {}
+                severity_factors
+            ),
+            "review": review,
+            "model_thresholds": (
+                model_thresholds
             ),
             "model": {
-                "repository": inspection.model_repository,
-                "checkpoint": inspection.model_checkpoint,
+                "repository": (
+                    inspection
+                    .model_repository
+                ),
+                "checkpoint": (
+                    inspection
+                    .model_checkpoint
+                ),
                 "confidence_threshold": (
-                    inspection.confidence_threshold
+                    inspection
+                    .confidence_threshold
                 ),
             },
             "detections": [
                 {
-                    "id": detection.id,
-                    "damage_type": detection.damage_type,
-                    "confidence": detection.confidence,
+                    "id": (
+                        detection.id
+                    ),
+                    "damage_type": (
+                        detection
+                        .damage_type
+                    ),
+                    "confidence": (
+                        detection
+                        .confidence
+                    ),
                     "bounding_box": {
-                        "x1": detection.x1,
-                        "y1": detection.y1,
-                        "x2": detection.x2,
-                        "y2": detection.y2,
+                        "x1": (
+                            detection.x1
+                        ),
+                        "y1": (
+                            detection.y1
+                        ),
+                        "x2": (
+                            detection.x2
+                        ),
+                        "y2": (
+                            detection.y2
+                        ),
                     },
                     "segmentation": (
-                        json.loads(detection.segmentation)
-                        if detection.segmentation
+                        json.loads(
+                            detection
+                            .segmentation
+                        )
+                        if (
+                            detection
+                            .segmentation
+                        )
                         else []
                     ),
                 }
-                for detection in inspection.detections
+                for detection
+                in inspection.detections
             ],
         },
     }
 
 
-@app.get("/damage-images/{image_id}/inspections")
+@app.get(
+    "/damage-images/"
+    "{image_id}/inspections"
+)
 def get_image_inspections(
     image_id: int,
     db: Session = Depends(get_db),
 ):
-    damage_image = db.query(
-        DamageImageDB
-    ).filter(
-        DamageImageDB.id == image_id
-    ).first()
+    damage_image = (
+        db.query(DamageImageDB)
+        .filter(
+            DamageImageDB.id
+            == image_id
+        )
+        .first()
+    )
 
     if not damage_image:
         raise HTTPException(
             status_code=404,
-            detail="Damage image not found",
+            detail=(
+                "Damage image not found"
+            ),
         )
 
-    inspections = db.query(
-        InspectionDB
-    ).filter(
-        InspectionDB.damage_image_id == image_id
-    ).order_by(
-        InspectionDB.created_at.desc()
-    ).all()
+    inspections = (
+        db.query(InspectionDB)
+        .filter(
+            InspectionDB.damage_image_id
+            == image_id
+        )
+        .order_by(
+            InspectionDB
+            .created_at
+            .desc()
+        )
+        .all()
+    )
 
     return {
         "image_id": image_id,
-        "inspection_count": len(inspections),
+        "inspection_count": (
+            len(inspections)
+        ),
         "inspections": [
             {
                 "id": inspection.id,
-                "status": inspection.status,
+                "status": (
+                    inspection.status
+                ),
                 "damage_detected": (
-                    inspection.damage_detected
+                    inspection
+                    .damage_detected
                 ),
                 "damage_count": (
                     inspection.damage_count
                 ),
                 "highest_confidence": (
-                    inspection.highest_confidence
+                    inspection
+                    .highest_confidence
                 ),
-                "severity": inspection.severity,
+                "severity": (
+                    inspection.severity
+                ),
                 "severity_score": (
-                    inspection.severity_score
+                    inspection
+                    .severity_score
                 ),
                 "severity_factors": (
-                    json.loads(
-                        inspection.severity_factors
+                    get_severity_factors(
+                        inspection
                     )
-                    if inspection.severity_factors
-                    else {}
                 ),
-                "created_at": inspection.created_at,
+                "review": (
+                    get_review_metadata(
+                        inspection
+                    )
+                ),
+                "model_thresholds": (
+                    get_model_thresholds(
+                        inspection
+                    )
+                ),
+                "created_at": (
+                    inspection.created_at
+                ),
                 "model": {
                     "repository": (
-                        inspection.model_repository
+                        inspection
+                        .model_repository
                     ),
                     "checkpoint": (
-                        inspection.model_checkpoint
+                        inspection
+                        .model_checkpoint
                     ),
                     "confidence_threshold": (
-                        inspection.confidence_threshold
+                        inspection
+                        .confidence_threshold
                     ),
                 },
                 "detections": [
                     {
-                        "id": detection.id,
+                        "id": (
+                            detection.id
+                        ),
                         "damage_type": (
-                            detection.damage_type
+                            detection
+                            .damage_type
                         ),
                         "confidence": (
-                            detection.confidence
+                            detection
+                            .confidence
                         ),
                         "bounding_box": {
-                            "x1": detection.x1,
-                            "y1": detection.y1,
-                            "x2": detection.x2,
-                            "y2": detection.y2,
+                            "x1": (
+                                detection.x1
+                            ),
+                            "y1": (
+                                detection.y1
+                            ),
+                            "x2": (
+                                detection.x2
+                            ),
+                            "y2": (
+                                detection.y2
+                            ),
                         },
                         "segmentation": (
                             json.loads(
-                                detection.segmentation
+                                detection
+                                .segmentation
                             )
-                            if detection.segmentation
+                            if (
+                                detection
+                                .segmentation
+                            )
                             else []
                         ),
                     }
-                    for detection in inspection.detections
+                    for detection
+                    in inspection.detections
                 ],
             }
-            for inspection in inspections
+            for inspection
+            in inspections
         ],
     }
 
 
 @app.get(
-    "/inspections/{inspection_id}/report",
-    response_model=InspectionReportResponse,
+    "/inspections/"
+    "{inspection_id}/report",
+    response_model=(
+        InspectionReportResponse
+    ),
 )
 def get_inspection_report(
     inspection_id: int,
     db: Session = Depends(get_db),
 ):
-    inspection = db.query(
-        InspectionDB
-    ).filter(
-        InspectionDB.id == inspection_id
-    ).first()
+    inspection = (
+        db.query(InspectionDB)
+        .filter(
+            InspectionDB.id
+            == inspection_id
+        )
+        .first()
+    )
 
     if not inspection:
         raise HTTPException(
             status_code=404,
-            detail="Inspection not found",
+            detail=(
+                "Inspection not found"
+            ),
         )
 
-    damage_image = inspection.damage_image
-    vehicle = damage_image.vehicle
+    damage_image = (
+        inspection.damage_image
+    )
+
+    vehicle = (
+        damage_image.vehicle
+    )
+
+    severity_factors = (
+        get_severity_factors(
+            inspection
+        )
+    )
+
+    review = (
+        get_review_metadata(
+            inspection
+        )
+    )
+
+    model_thresholds = (
+        get_model_thresholds(
+            inspection
+        )
+    )
 
     return {
         "report": {
-            "inspection_id": inspection.id,
-            "created_at": inspection.created_at,
-            "status": inspection.status,
+            "inspection_id": (
+                inspection.id
+            ),
+            "created_at": (
+                inspection.created_at
+            ),
+            "status": (
+                inspection.status
+            ),
             "vehicle": {
-                "registration": vehicle.registration,
+                "registration": (
+                    vehicle.registration
+                ),
                 "make": vehicle.make,
                 "model": vehicle.model,
                 "year": vehicle.year,
             },
             "image": {
-                "id": damage_image.id,
-                "filename": damage_image.filename,
+                "id": (
+                    damage_image.id
+                ),
+                "filename": (
+                    damage_image.filename
+                ),
             },
             "summary": {
-                "damage_detected": inspection.damage_detected,
-                "damage_count": inspection.damage_count,
-                "highest_confidence": (
-                    inspection.highest_confidence
+                "damage_detected": (
+                    inspection
+                    .damage_detected
                 ),
-                "severity": inspection.severity,
+                "damage_count": (
+                    inspection
+                    .damage_count
+                ),
+                "highest_confidence": (
+                    inspection
+                    .highest_confidence
+                ),
+                "severity": (
+                    inspection.severity
+                ),
                 "severity_score": (
-                    inspection.severity_score
+                    inspection
+                    .severity_score
                 ),
                 "severity_factors": (
-                    json.loads(
-                        inspection.severity_factors
-                    )
-                    if inspection.severity_factors
-                    else {}
+                    severity_factors
+                ),
+                "review": review,
+                "model_thresholds": (
+                    model_thresholds
                 ),
             },
             "detections": [
                 {
-                    "id": detection.id,
-                    "damage_type": detection.damage_type,
-                    "confidence": detection.confidence,
+                    "id": (
+                        detection.id
+                    ),
+                    "damage_type": (
+                        detection
+                        .damage_type
+                    ),
+                    "confidence": (
+                        detection
+                        .confidence
+                    ),
                     "bounding_box": {
-                        "x1": detection.x1,
-                        "y1": detection.y1,
-                        "x2": detection.x2,
-                        "y2": detection.y2,
+                        "x1": (
+                            detection.x1
+                        ),
+                        "y1": (
+                            detection.y1
+                        ),
+                        "x2": (
+                            detection.x2
+                        ),
+                        "y2": (
+                            detection.y2
+                        ),
                     },
                     "segmentation": (
-                        json.loads(detection.segmentation)
-                        if detection.segmentation
+                        json.loads(
+                            detection
+                            .segmentation
+                        )
+                        if (
+                            detection
+                            .segmentation
+                        )
                         else []
                     ),
                 }
-                for detection in inspection.detections
+                for detection
+                in inspection.detections
             ],
             "model": {
-                "repository": inspection.model_repository,
-                "checkpoint": inspection.model_checkpoint,
+                "repository": (
+                    inspection
+                    .model_repository
+                ),
+                "checkpoint": (
+                    inspection
+                    .model_checkpoint
+                ),
                 "confidence_threshold": (
-                    inspection.confidence_threshold
+                    inspection
+                    .confidence_threshold
                 ),
             },
         },
@@ -602,22 +995,30 @@ def get_inspection_report(
 
 
 @app.get(
-    "/vehicles/{registration}/inspection-summary",
-    response_model=VehicleInspectionSummary,
+    "/vehicles/{registration}/"
+    "inspection-summary",
+    response_model=(
+        VehicleInspectionSummary
+    ),
 )
 def get_vehicle_inspection_summary(
     registration: str,
     db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(
-        VehicleDB
-    ).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
@@ -627,19 +1028,26 @@ def get_vehicle_inspection_summary(
 
     all_inspections = []
 
-    for damage_image in vehicle.damage_images:
+    for damage_image in (
+        vehicle.damage_images
+    ):
         all_inspections.extend(
             damage_image.inspections
         )
 
     total_damage_detections = sum(
-        len(inspection.detections)
-        for inspection in all_inspections
+        len(
+            inspection.detections
+        )
+        for inspection
+        in all_inspections
     )
 
     damage_detected = any(
-        inspection.damage_detected is True
-        for inspection in all_inspections
+        inspection.damage_detected
+        is True
+        for inspection
+        in all_inspections
     )
 
     latest_inspection = None
@@ -647,20 +1055,41 @@ def get_vehicle_inspection_summary(
     if all_inspections:
         latest_inspection = max(
             all_inspections,
-            key=lambda inspection: inspection.created_at,
+            key=lambda inspection: (
+                inspection.created_at
+            ),
+        )
+
+    latest_review = None
+
+    if latest_inspection:
+        latest_review = (
+            get_review_metadata(
+                latest_inspection
+            )
         )
 
     return {
-        "registration": vehicle.registration,
+        "registration": (
+            vehicle.registration
+        ),
         "vehicle": {
-            "registration": vehicle.registration,
+            "registration": (
+                vehicle.registration
+            ),
             "make": vehicle.make,
             "model": vehicle.model,
             "year": vehicle.year,
         },
-        "total_images": len(vehicle.damage_images),
-        "total_inspections": len(all_inspections),
-        "damage_detected": damage_detected,
+        "total_images": len(
+            vehicle.damage_images
+        ),
+        "total_inspections": len(
+            all_inspections
+        ),
+        "damage_detected": (
+            damage_detected
+        ),
         "total_damage_detections": (
             total_damage_detections
         ),
@@ -670,7 +1099,8 @@ def get_vehicle_inspection_summary(
             else None
         ),
         "latest_severity_score": (
-            latest_inspection.severity_score
+            latest_inspection
+            .severity_score
             if latest_inspection
             else None
         ),
@@ -679,58 +1109,150 @@ def get_vehicle_inspection_summary(
             if latest_inspection
             else None
         ),
+        "latest_inspection_confidence": (
+            latest_review.get(
+                "inspection_confidence"
+            )
+            if latest_review
+            else None
+        ),
+        "latest_manual_review_required": (
+            latest_review.get(
+                "manual_review_required"
+            )
+            if latest_review
+            else None
+        ),
     }
+
+
 @app.get("/dashboard/summary")
 def get_dashboard_summary(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    vehicles = db.query(VehicleDB).all()
-    inspections = db.query(InspectionDB).all()
+    vehicles = (
+        db.query(VehicleDB)
+        .all()
+    )
 
-    total_vehicles = len(vehicles)
-    total_inspections = len(inspections)
+    inspections = (
+        db.query(InspectionDB)
+        .all()
+    )
+
+    total_vehicles = len(
+        vehicles
+    )
+
+    total_inspections = len(
+        inspections
+    )
 
     damage_detected = sum(
         1
-        for inspection in inspections
-        if inspection.damage_detected is True
+        for inspection
+        in inspections
+        if (
+            inspection.damage_detected
+            is True
+        )
     )
 
-    clear_inspections = sum(
-        1
-        for inspection in inspections
-        if inspection.damage_detected is False
-    )
+    clear_inspections = 0
+    manual_review_count = 0
+
+    for inspection in inspections:
+        review = (
+            get_review_metadata(
+                inspection
+            )
+        )
+
+        requires_review = (
+            review.get(
+                "manual_review_required",
+                False,
+            )
+            if review
+            else False
+        )
+
+        if requires_review:
+            manual_review_count += 1
+
+        if (
+            inspection.damage_detected
+            is False
+            and not requires_review
+        ):
+            clear_inspections += 1
 
     recent_inspections = (
         db.query(InspectionDB)
         .order_by(
-            InspectionDB.created_at.desc()
+            InspectionDB
+            .created_at
+            .desc()
         )
         .limit(5)
         .all()
     )
 
     return {
-        "total_vehicles": total_vehicles,
-        "total_inspections": total_inspections,
-        "damage_detected": damage_detected,
-        "clear_inspections": clear_inspections,
+        "total_vehicles": (
+            total_vehicles
+        ),
+        "total_inspections": (
+            total_inspections
+        ),
+        "damage_detected": (
+            damage_detected
+        ),
+        "clear_inspections": (
+            clear_inspections
+        ),
+        "manual_review_count": (
+            manual_review_count
+        ),
         "recent_inspections": [
             {
                 "id": inspection.id,
                 "damage_detected": (
-                    inspection.damage_detected
+                    inspection
+                    .damage_detected
                 ),
                 "damage_count": (
-                    inspection.damage_count
+                    inspection
+                    .damage_count
                 ),
-                "severity": inspection.severity,
+                "severity": (
+                    inspection.severity
+                ),
                 "severity_score": (
-                    inspection.severity_score
+                    inspection
+                    .severity_score
+                ),
+                "inspection_confidence": (
+                    (
+                        get_review_metadata(
+                            inspection
+                        ) or {}
+                    ).get(
+                        "inspection_confidence"
+                    )
+                ),
+                "manual_review_required": (
+                    (
+                        get_review_metadata(
+                            inspection
+                        ) or {}
+                    ).get(
+                        "manual_review_required"
+                    )
                 ),
                 "created_at": (
-                    inspection.created_at
+                    inspection
+                    .created_at
                 ),
                 "registration": (
                     inspection
@@ -751,66 +1273,103 @@ def get_dashboard_summary(
                     .model
                 ),
             }
-            for inspection in recent_inspections
-        ]
+            for inspection
+            in recent_inspections
+        ],
     }
-@app.delete("/damage-images/{image_id}")
+
+
+@app.delete(
+    "/damage-images/{image_id}"
+)
 def delete_damage_image(
     image_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    damage_image = db.query(DamageImageDB).filter(
-        DamageImageDB.id == image_id
-    ).first()
+    damage_image = (
+        db.query(DamageImageDB)
+        .filter(
+            DamageImageDB.id
+            == image_id
+        )
+        .first()
+    )
 
     if not damage_image:
         raise HTTPException(
             status_code=404,
-            detail="Damage image not found"
+            detail=(
+                "Damage image not found"
+            ),
         )
 
-    file_path = damage_image.file_path
+    file_path = (
+        damage_image.file_path
+    )
 
     db.delete(damage_image)
     db.commit()
 
-    if file_path and os.path.exists(file_path):
+    if (
+        file_path
+        and os.path.exists(
+            file_path
+        )
+    ):
         os.remove(file_path)
 
     return {
-        "message": "Damage image deleted successfully"
+        "message": (
+            "Damage image deleted "
+            "successfully"
+        )
     }
 
 
-@app.delete("/vehicles/{registration}/full")
+@app.delete(
+    "/vehicles/{registration}/full"
+)
 def delete_vehicle_and_data(
     registration: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    normalised_registration = normalise_registration(
-        registration
+    normalised_registration = (
+        normalise_registration(
+            registration
+        )
     )
 
-    vehicle = db.query(VehicleDB).filter(
-        VehicleDB.registration == normalised_registration
-    ).first()
+    vehicle = (
+        db.query(VehicleDB)
+        .filter(
+            VehicleDB.registration
+            == normalised_registration
+        )
+        .first()
+    )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found"
+            detail="Vehicle not found",
         )
 
     image_paths = [
         image.file_path
-        for image in vehicle.damage_images
+        for image
+        in vehicle.damage_images
     ]
 
     db.delete(vehicle)
     db.commit()
 
     for file_path in image_paths:
-        if file_path and os.path.exists(file_path):
+        if (
+            file_path
+            and os.path.exists(
+                file_path
+            )
+        ):
             os.remove(file_path)
 
     return {
