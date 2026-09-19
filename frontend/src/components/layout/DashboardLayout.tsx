@@ -3,6 +3,7 @@ import {
   CarFront,
   ClipboardCheck,
   LayoutDashboard,
+  LogOut,
   Menu,
   ScanLine,
   ShieldCheck,
@@ -11,34 +12,55 @@ import {
 import {
   NavLink,
   Outlet,
+  useNavigate,
 } from 'react-router'
+
+import {
+  logoutUser,
+} from '../../api/client'
 
 
 const navigation = [
   {
     name: 'Dashboard',
-    href: '/',
+    href: '/app',
     icon: LayoutDashboard,
   },
   {
     name: 'Vehicles',
-    href: '/vehicles',
+    href: '/app/vehicles',
     icon: CarFront,
   },
   {
     name: 'New Inspection',
-    href: '/inspections/new',
+    href: '/app/inspections/new',
     icon: ScanLine,
   },
   {
     name: 'Reports',
-    href: '/reports',
+    href: '/app/reports',
     icon: ClipboardCheck,
   },
 ]
 
 
 function DashboardLayout() {
+  const navigate =
+    useNavigate()
+
+
+  function handleLogout() {
+    logoutUser()
+
+    navigate(
+      '/',
+      {
+        replace: true,
+      },
+    )
+  }
+
+
   return (
     <div className="min-h-screen bg-[#08090b] text-white">
       <aside
@@ -75,13 +97,16 @@ function DashboardLayout() {
 
         <nav className="mt-5 flex-1 space-y-1 px-3">
           {navigation.map((item) => {
-            const Icon = item.icon
+            const Icon =
+              item.icon
 
             return (
               <NavLink
                 key={item.name}
                 to={item.href}
-                end={item.href === '/'}
+                end={
+                  item.href === '/app'
+                }
                 className={({ isActive }) =>
                   `
                     flex items-center gap-3
@@ -103,7 +128,7 @@ function DashboardLayout() {
           })}
         </nav>
 
-        <div className="border-t border-white/10 p-5">
+        <div className="space-y-3 border-t border-white/10 p-5">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-center gap-2">
               <Activity
@@ -124,6 +149,27 @@ function DashboardLayout() {
               AI inspection engine ready
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="
+              flex w-full
+              items-center gap-3
+              rounded-xl
+              border border-white/10
+              px-4 py-3
+              text-sm font-medium
+              text-neutral-400
+              transition
+              hover:bg-white/5
+              hover:text-white
+            "
+          >
+            <LogOut size={18} />
+
+            Sign out
+          </button>
         </div>
       </aside>
 
@@ -140,6 +186,7 @@ function DashboardLayout() {
           "
         >
           <button
+            type="button"
             className="
               mr-4 rounded-lg
               border border-white/10
@@ -175,17 +222,27 @@ function DashboardLayout() {
               Development
             </div>
 
-            <div
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Sign out"
               className="
-                flex h-9 w-9
-                items-center justify-center
-                rounded-full
-                bg-neutral-800
-                text-xs font-semibold
+                hidden
+                items-center gap-2
+                rounded-xl
+                border border-white/10
+                px-3 py-2
+                text-xs text-neutral-400
+                transition
+                hover:bg-white/5
+                hover:text-white
+                sm:flex
               "
             >
-              SM
-            </div>
+              <LogOut size={15} />
+
+              Sign out
+            </button>
           </div>
         </header>
 

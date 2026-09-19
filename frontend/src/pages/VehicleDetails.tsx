@@ -145,7 +145,9 @@ function VehicleDetails() {
           ],
         })
 
-        navigate('/vehicles')
+        navigate(
+          '/app/vehicles',
+        )
       },
     })
 
@@ -183,7 +185,7 @@ function VehicleDetails() {
           registration
         ) {
           navigate(
-            `/vehicles/${updatedVehicle.registration}`,
+            `/app/vehicles/${updatedVehicle.registration}`,
             {
               replace: true,
             },
@@ -372,7 +374,7 @@ function VehicleDetails() {
   return (
     <div className="mx-auto max-w-7xl">
       <Link
-        to="/vehicles"
+        to="/app/vehicles"
         className="
           inline-flex
           items-center

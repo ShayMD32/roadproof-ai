@@ -496,7 +496,7 @@ function Vehicles() {
 
                             <Link
                               to={
-                                `/vehicles/${vehicle.registration}`
+                                `/app/vehicles/${vehicle.registration}`
                               }
                               className="
                                 inline-flex

@@ -1,8 +1,17 @@
 import {
   Navigate,
+  Outlet,
   Route,
   Routes,
 } from 'react-router'
+
+import type {
+  ReactNode,
+} from 'react'
+
+import {
+  isAuthenticated,
+} from './api/client'
 
 import DashboardLayout from './components/layout/DashboardLayout'
 
@@ -12,41 +21,105 @@ import VehicleDetails from './pages/VehicleDetails'
 import NewInspection from './pages/NewInspection'
 import Reports from './pages/Reports'
 import InspectionReport from './pages/InspectionReport'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Landing from './pages/Landing'
+
+
+function ProtectedRoutes() {
+  if (!isAuthenticated()) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+      />
+    )
+  }
+
+  return <Outlet />
+}
+
+
+function PublicOnlyRoute({
+  children,
+}: {
+  children: ReactNode
+}) {
+  if (isAuthenticated()) {
+    return (
+      <Navigate
+        to="/app"
+        replace
+      />
+    )
+  }
+
+  return children
+}
 
 
 function App() {
   return (
     <Routes>
-      <Route element={<DashboardLayout />}>
-        <Route
-          path="/"
-          element={<Dashboard />}
-        />
+      <Route
+        path="/"
+        element={<Landing />}
+      />
 
-        <Route
-          path="/vehicles"
-          element={<Vehicles />}
-        />
+      <Route
+        path="/login"
+        element={
+          <PublicOnlyRoute>
+            <Login />
+          </PublicOnlyRoute>
+        }
+      />
 
-        <Route
-          path="/vehicles/:registration"
-          element={<VehicleDetails />}
-        />
+      <Route
+        path="/register"
+        element={
+          <PublicOnlyRoute>
+            <Register />
+          </PublicOnlyRoute>
+        }
+      />
 
+      <Route
+        element={<ProtectedRoutes />}
+      >
         <Route
-          path="/inspections/new"
-          element={<NewInspection />}
-        />
+          element={<DashboardLayout />}
+        >
+          <Route
+            path="/app"
+            element={<Dashboard />}
+          />
 
-        <Route
-          path="/reports"
-          element={<Reports />}
-        />
+          <Route
+            path="/app/vehicles"
+            element={<Vehicles />}
+          />
 
-        <Route
-          path="/reports/:inspectionId"
-          element={<InspectionReport />}
-        />
+          <Route
+            path="/app/vehicles/:registration"
+            element={<VehicleDetails />}
+          />
+
+          <Route
+            path="/app/inspections/new"
+            element={<NewInspection />}
+          />
+
+          <Route
+            path="/app/reports"
+            element={<Reports />}
+          />
+
+          <Route
+            path="/app/reports/:inspectionId"
+            element={<InspectionReport />}
+          />
+        </Route>
       </Route>
 
       <Route

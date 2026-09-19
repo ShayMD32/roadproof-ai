@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+
 import {
   AlertTriangle,
   CarFront,
@@ -6,7 +7,9 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
-import { useNavigate } from 'react-router'
+import {
+  useNavigate,
+} from 'react-router'
 
 import {
   getDashboardSummary,
@@ -14,42 +17,78 @@ import {
 
 
 function Dashboard() {
-  const navigate = useNavigate()
+  const navigate =
+    useNavigate()
 
   const {
     data,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ['dashboard-summary'],
-    queryFn: getDashboardSummary,
+    queryKey: [
+      'dashboard-summary',
+    ],
+    queryFn:
+      getDashboardSummary,
   })
 
 
   const metrics = [
     {
-      title: 'Total Vehicles',
-      value: data?.total_vehicles ?? 0,
-      description: 'Vehicles registered',
-      icon: CarFront,
+      title:
+        'Total Vehicles',
+
+      value:
+        data?.total_vehicles ??
+        0,
+
+      description:
+        'Vehicles registered',
+
+      icon:
+        CarFront,
     },
     {
-      title: 'Inspections',
-      value: data?.total_inspections ?? 0,
-      description: 'AI inspections completed',
-      icon: ScanLine,
+      title:
+        'Inspections',
+
+      value:
+        data?.total_inspections ??
+        0,
+
+      description:
+        'AI inspections completed',
+
+      icon:
+        ScanLine,
     },
     {
-      title: 'Damage Detected',
-      value: data?.damage_detected ?? 0,
-      description: 'Inspections with damage',
-      icon: AlertTriangle,
+      title:
+        'Damage Detected',
+
+      value:
+        data?.damage_detected ??
+        0,
+
+      description:
+        'Inspections with damage',
+
+      icon:
+        AlertTriangle,
     },
     {
-      title: 'Clear Inspections',
-      value: data?.clear_inspections ?? 0,
-      description: 'No damage detected',
-      icon: ShieldCheck,
+      title:
+        'Clear Inspections',
+
+      value:
+        data?.clear_inspections ??
+        0,
+
+      description:
+        'No damage detected',
+
+      icon:
+        ShieldCheck,
     },
   ]
 
@@ -102,7 +141,9 @@ function Dashboard() {
 
         <button
           onClick={() =>
-            navigate('/inspections/new')
+            navigate(
+              '/app/inspections/new',
+            )
           }
           className="
             rounded-xl
@@ -143,11 +184,14 @@ function Dashboard() {
         "
       >
         {metrics.map((metric) => {
-          const Icon = metric.icon
+          const Icon =
+            metric.icon
 
           return (
             <div
-              key={metric.title}
+              key={
+                metric.title
+              }
               className="
                 rounded-2xl
                 border border-white/10
@@ -174,7 +218,9 @@ function Dashboard() {
                     text-neutral-300
                   "
                 >
-                  <Icon size={18} />
+                  <Icon
+                    size={18}
+                  />
                 </div>
               </div>
 
@@ -197,7 +243,9 @@ function Dashboard() {
                   text-neutral-500
                 "
               >
-                {metric.description}
+                {
+                  metric.description
+                }
               </p>
             </div>
           )
@@ -219,8 +267,10 @@ function Dashboard() {
         >
           <div
             className="
-              flex items-center justify-between
-              border-b border-white/10
+              flex items-center
+              justify-between
+              border-b
+              border-white/10
               px-6 py-5
             "
           >
@@ -232,7 +282,8 @@ function Dashboard() {
               <p
                 className="
                   mt-1
-                  text-xs text-neutral-500
+                  text-xs
+                  text-neutral-500
                 "
               >
                 Latest AI vehicle assessments
@@ -244,8 +295,11 @@ function Dashboard() {
             <div
               className="
                 flex min-h-72
-                flex-col items-center justify-center
-                px-6 text-center
+                flex-col
+                items-center
+                justify-center
+                px-6
+                text-center
               "
             >
               <ScanLine
@@ -256,7 +310,8 @@ function Dashboard() {
               <h3
                 className="
                   mt-4
-                  text-sm font-medium
+                  text-sm
+                  font-medium
                 "
               >
                 No inspections yet
@@ -264,8 +319,10 @@ function Dashboard() {
 
               <p
                 className="
-                  mt-2 max-w-xs
-                  text-xs leading-5
+                  mt-2
+                  max-w-xs
+                  text-xs
+                  leading-5
                   text-neutral-500
                 "
               >
@@ -276,17 +333,22 @@ function Dashboard() {
           ) : (
             <div className="divide-y divide-white/5">
               {data.recent_inspections.map(
-                (inspection) => (
+                (
+                  inspection,
+                ) => (
                   <button
-                    key={inspection.id}
+                    key={
+                      inspection.id
+                    }
                     onClick={() =>
                       navigate(
-                        `/reports/${inspection.id}`,
+                        `/app/reports/${inspection.id}`,
                       )
                     }
                     className="
                       flex w-full
-                      items-center justify-between
+                      items-center
+                      justify-between
                       px-6 py-4
                       text-left
                       transition
@@ -295,8 +357,12 @@ function Dashboard() {
                   >
                     <div>
                       <p className="text-sm font-medium">
-                        {inspection.make}{' '}
-                        {inspection.model}
+                        {
+                          inspection.make
+                        }{' '}
+                        {
+                          inspection.model
+                        }
                       </p>
 
                       <p
@@ -306,13 +372,18 @@ function Dashboard() {
                           text-neutral-500
                         "
                       >
-                        {inspection.registration}
+                        {
+                          inspection.registration
+                        }
                       </p>
                     </div>
 
                     <div className="text-right">
                       <p className="text-sm capitalize">
-                        {inspection.severity ?? 'None'}
+                        {
+                          inspection.severity ??
+                          'None'
+                        }
                       </p>
 
                       <p
@@ -322,7 +393,10 @@ function Dashboard() {
                           text-neutral-500
                         "
                       >
-                        Inspection #{inspection.id}
+                        Inspection #
+                        {
+                          inspection.id
+                        }
                       </p>
                     </div>
                   </button>
@@ -357,7 +431,8 @@ function Dashboard() {
           <div
             className="
               mt-8
-              flex items-center gap-3
+              flex items-center
+              gap-3
             "
           >
             <span
@@ -388,7 +463,8 @@ function Dashboard() {
             <div>
               <div
                 className="
-                  flex justify-between
+                  flex
+                  justify-between
                   text-xs
                   text-neutral-500
                 "

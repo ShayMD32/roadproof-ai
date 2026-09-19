@@ -230,4 +230,7 @@ backend/roadproof.db
 backend/test_roadproof.db
 
 # Uploaded images
+backend/uploads/backend/roadproof_before_ownership.db
+
+backend/roadproof_before_ownership.db
 backend/uploads/

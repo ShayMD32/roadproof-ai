@@ -1,4 +1,7 @@
-from datetime import datetime, timezone
+from datetime import (
+    datetime,
+    timezone,
+)
 
 from sqlalchemy import (
     Boolean,
@@ -9,8 +12,12 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+
+from sqlalchemy.orm import (
+    relationship,
+)
 
 from app.database import Base
 
@@ -41,6 +48,12 @@ class UserDB(Base):
         nullable=False,
     )
 
+    role = Column(
+        String,
+        nullable=False,
+        default="user",
+    )
+
     is_active = Column(
         Boolean,
         nullable=False,
@@ -55,9 +68,24 @@ class UserDB(Base):
         ),
     )
 
+    vehicles = relationship(
+        "VehicleDB",
+        back_populates="owner",
+    )
+
 
 class VehicleDB(Base):
     __tablename__ = "vehicles"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id",
+            "registration",
+            name=(
+                "uq_vehicle_owner_registration"
+            ),
+        ),
+    )
 
     id = Column(
         Integer,
@@ -67,7 +95,6 @@ class VehicleDB(Base):
 
     registration = Column(
         String,
-        unique=True,
         index=True,
         nullable=False,
     )
@@ -85,6 +112,18 @@ class VehicleDB(Base):
     year = Column(
         Integer,
         nullable=False,
+    )
+
+    owner_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+
+    owner = relationship(
+        "UserDB",
+        back_populates="vehicles",
     )
 
     damage_images = relationship(
