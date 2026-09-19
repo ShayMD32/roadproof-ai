@@ -48,6 +48,10 @@ class UserDB(Base):
         nullable=False,
     )
 
+    # Platform-level role.
+    #
+    # user  = normal RoadProof account
+    # admin = RoadProof platform administrator
     role = Column(
         String,
         nullable=False,
@@ -73,16 +77,158 @@ class UserDB(Base):
         back_populates="owner",
     )
 
+    organisation_memberships = relationship(
+        "OrganisationMembershipDB",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    created_organisations = relationship(
+        "OrganisationDB",
+        back_populates="created_by",
+        foreign_keys=(
+            "OrganisationDB.created_by_user_id"
+        ),
+    )
+
+
+class OrganisationDB(Base):
+    __tablename__ = "organisations"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    name = Column(
+        String,
+        nullable=False,
+    )
+
+    created_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(
+            timezone.utc
+        ),
+    )
+
+    created_by = relationship(
+        "UserDB",
+        back_populates="created_organisations",
+        foreign_keys=[
+            created_by_user_id,
+        ],
+    )
+
+    memberships = relationship(
+        "OrganisationMembershipDB",
+        back_populates="organisation",
+        cascade="all, delete-orphan",
+    )
+
+    vehicles = relationship(
+        "VehicleDB",
+        back_populates="organisation",
+    )
+
+
+class OrganisationMembershipDB(
+    Base
+):
+    __tablename__ = (
+        "organisation_memberships"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organisation_id",
+            "user_id",
+            name=(
+                "uq_organisation_"
+                "membership_user"
+            ),
+        ),
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    organisation_id = Column(
+        Integer,
+        ForeignKey(
+            "organisations.id"
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Workspace-level role.
+    #
+    # owner  = workspace owner
+    # admin  = workspace administrator
+    # member = normal workspace member
+    role = Column(
+        String,
+        nullable=False,
+        default="member",
+    )
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(
+            timezone.utc
+        ),
+    )
+
+    organisation = relationship(
+        "OrganisationDB",
+        back_populates="memberships",
+    )
+
+    user = relationship(
+        "UserDB",
+        back_populates=(
+            "organisation_memberships"
+        ),
+    )
+
 
 class VehicleDB(Base):
     __tablename__ = "vehicles"
 
     __table_args__ = (
         UniqueConstraint(
-            "owner_id",
+            "organisation_id",
             "registration",
             name=(
-                "uq_vehicle_owner_registration"
+                "uq_vehicle_organisation_"
+                "registration"
             ),
         ),
     )
@@ -114,6 +260,9 @@ class VehicleDB(Base):
         nullable=False,
     )
 
+    # Existing Day 2 ownership field.
+    #
+    # Kept for creator/audit compatibility.
     owner_id = Column(
         Integer,
         ForeignKey("users.id"),
@@ -121,8 +270,23 @@ class VehicleDB(Base):
         index=True,
     )
 
+    # Day 3 workspace ownership.
+    organisation_id = Column(
+        Integer,
+        ForeignKey(
+            "organisations.id"
+        ),
+        nullable=True,
+        index=True,
+    )
+
     owner = relationship(
         "UserDB",
+        back_populates="vehicles",
+    )
+
+    organisation = relationship(
+        "OrganisationDB",
         back_populates="vehicles",
     )
 

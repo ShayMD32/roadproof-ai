@@ -6,13 +6,13 @@ from fastapi import (
     Depends,
     FastAPI,
     File,
+    Header,
     HTTPException,
     UploadFile,
 )
-from fastapi.middleware.cors import (
-    CORSMiddleware,
-)
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -21,16 +21,18 @@ from app.auth import (
     hash_password,
     verify_password,
 )
-
 from app.database import get_db
-
 from app.models import (
     DamageImageDB,
     InspectionDB,
+    OrganisationDB,
+    OrganisationMembershipDB,
     UserDB,
     VehicleDB,
 )
-
+from app.routers.organisations import (
+    router as organisations_router,
+)
 from app.schemas import (
     InspectionReportResponse,
     TokenResponse,
@@ -39,7 +41,6 @@ from app.schemas import (
     UserResponse,
     VehicleInspectionSummary,
 )
-
 from app.services.inspection_service import (
     analyse_damage_image,
 )
@@ -47,6 +48,9 @@ from app.services.inspection_service import (
 
 app = FastAPI()
 
+app.include_router(
+    organisations_router
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,6 +87,157 @@ def is_admin(
     return (
         user.role == "admin"
     )
+
+
+def get_user_organisation_ids(
+    db: Session,
+    user: UserDB,
+) -> list[int]:
+    memberships = (
+        db.query(
+            OrganisationMembershipDB
+        )
+        .filter(
+            OrganisationMembershipDB.user_id
+            == user.id
+        )
+        .all()
+    )
+
+    return [
+        membership.organisation_id
+        for membership
+        in memberships
+    ]
+
+
+def get_user_memberships(
+    db: Session,
+    user: UserDB,
+) -> list[OrganisationMembershipDB]:
+    return (
+        db.query(
+            OrganisationMembershipDB
+        )
+        .filter(
+            OrganisationMembershipDB.user_id
+            == user.id
+        )
+        .order_by(
+            OrganisationMembershipDB.id
+        )
+        .all()
+    )
+
+
+def get_selected_organisation(
+    db: Session,
+    user: UserDB,
+    workspace_id: int | None,
+    allow_global_admin: bool = False,
+) -> OrganisationDB | None:
+    if (
+        is_admin(user)
+        and workspace_id is None
+        and allow_global_admin
+    ):
+        return None
+
+    if workspace_id is not None:
+        organisation = (
+            db.query(OrganisationDB)
+            .filter(
+                OrganisationDB.id
+                == workspace_id,
+                OrganisationDB.is_active
+                .is_(True),
+            )
+            .first()
+        )
+
+        if not organisation:
+            raise HTTPException(
+                status_code=404,
+                detail="Workspace not found",
+            )
+
+        if is_admin(user):
+            return organisation
+
+        membership = (
+            db.query(
+                OrganisationMembershipDB
+            )
+            .filter(
+                OrganisationMembershipDB.user_id
+                == user.id,
+                OrganisationMembershipDB.organisation_id
+                == organisation.id,
+            )
+            .first()
+        )
+
+        if not membership:
+            raise HTTPException(
+                status_code=404,
+                detail="Workspace not found",
+            )
+
+        return organisation
+
+    memberships = [
+        membership
+        for membership
+        in get_user_memberships(
+            db,
+            user,
+        )
+        if (
+            membership.organisation
+            and membership.organisation.is_active
+        )
+    ]
+
+    if not memberships:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "User does not have "
+                "an active workspace"
+            ),
+        )
+
+    if len(memberships) == 1:
+        return memberships[
+            0
+        ].organisation
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Multiple workspaces available. "
+            "Select one using X-Workspace-ID"
+        ),
+    )
+
+
+def get_primary_organisation(
+    db: Session,
+    user: UserDB,
+) -> OrganisationDB | None:
+    memberships = (
+        get_user_memberships(
+            db,
+            user,
+        )
+    )
+
+    if not memberships:
+        return None
+
+    return memberships[
+        0
+    ].organisation
 
 
 def get_severity_factors(
@@ -143,27 +298,43 @@ def user_to_dict(
     user: UserDB,
 ) -> dict:
     return {
-        "id":
-            user.id,
-
-        "email":
-            user.email,
-
-        "full_name":
-            user.full_name,
-
-        "is_active":
-            user.is_active,
-
-        "created_at":
-            user.created_at,
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "created_at": user.created_at,
     }
+
+
+def apply_vehicle_access_filter(
+    query,
+    db: Session,
+    current_user: UserDB,
+    workspace_id: int | None = None,
+):
+    organisation = (
+        get_selected_organisation(
+            db,
+            current_user,
+            workspace_id,
+            allow_global_admin=True,
+        )
+    )
+
+    if organisation is None:
+        return query
+
+    return query.filter(
+        VehicleDB.organisation_id
+        == organisation.id
+    )
 
 
 def get_vehicle_for_user(
     db: Session,
     registration: str,
     current_user: UserDB,
+    workspace_id: int | None = None,
 ) -> VehicleDB | None:
     normalised_registration = (
         normalise_registration(
@@ -179,10 +350,32 @@ def get_vehicle_for_user(
         )
     )
 
-    if not is_admin(
-        current_user
+    if (
+        is_admin(current_user)
+        and workspace_id is None
     ):
-        return (
+        organisation_ids = (
+            get_user_organisation_ids(
+                db,
+                current_user,
+            )
+        )
+
+        if organisation_ids:
+            own_workspace_vehicle = (
+                base_query
+                .filter(
+                    VehicleDB.organisation_id.in_(
+                        organisation_ids
+                    )
+                )
+                .first()
+            )
+
+            if own_workspace_vehicle:
+                return own_workspace_vehicle
+
+        own_vehicle = (
             base_query
             .filter(
                 VehicleDB.owner_id
@@ -191,25 +384,27 @@ def get_vehicle_for_user(
             .first()
         )
 
-    own_vehicle = (
-        base_query
-        .filter(
-            VehicleDB.owner_id
-            == current_user.id
+        if own_vehicle:
+            return own_vehicle
+
+        return base_query.first()
+
+    return (
+        apply_vehicle_access_filter(
+            base_query,
+            db,
+            current_user,
+            workspace_id,
         )
         .first()
     )
-
-    if own_vehicle:
-        return own_vehicle
-
-    return base_query.first()
 
 
 def get_damage_image_for_user(
     db: Session,
     image_id: int,
     current_user: UserDB,
+    workspace_id: int | None = None,
 ) -> DamageImageDB | None:
     query = (
         db.query(DamageImageDB)
@@ -224,13 +419,14 @@ def get_damage_image_for_user(
         )
     )
 
-    if not is_admin(
-        current_user
-    ):
-        query = query.filter(
-            VehicleDB.owner_id
-            == current_user.id
+    query = (
+        apply_vehicle_access_filter(
+            query,
+            db,
+            current_user,
+            workspace_id,
         )
+    )
 
     return query.first()
 
@@ -239,6 +435,7 @@ def get_inspection_for_user(
     db: Session,
     inspection_id: int,
     current_user: UserDB,
+    workspace_id: int | None = None,
 ) -> InspectionDB | None:
     query = (
         db.query(InspectionDB)
@@ -258,13 +455,14 @@ def get_inspection_for_user(
         )
     )
 
-    if not is_admin(
-        current_user
-    ):
-        query = query.filter(
-            VehicleDB.owner_id
-            == current_user.id
+    query = (
+        apply_vehicle_access_filter(
+            query,
+            db,
+            current_user,
+            workspace_id,
         )
+    )
 
     return query.first()
 
@@ -282,15 +480,9 @@ def health():
     return {
         "status":
             "Server Running",
-
         "version":
             "1.0",
     }
-
-
-# --------------------------------------------------
-# Authentication
-# --------------------------------------------------
 
 
 @app.post(
@@ -318,14 +510,10 @@ def register_user(
     if not full_name:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Full name is required"
-            ),
+            detail="Full name is required",
         )
 
-    if len(
-        request.password
-    ) < 8:
+    if len(request.password) < 8:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -364,9 +552,55 @@ def register_user(
         is_active=True,
     )
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        db.add(user)
+        db.flush()
+
+        organisation = (
+            OrganisationDB(
+                name=(
+                    f"{full_name}'s Workspace"
+                ),
+                created_by_user_id=(
+                    user.id
+                ),
+                is_active=True,
+            )
+        )
+
+        db.add(
+            organisation
+        )
+        db.flush()
+
+        membership = (
+            OrganisationMembershipDB(
+                organisation_id=(
+                    organisation.id
+                ),
+                user_id=user.id,
+                role="owner",
+            )
+        )
+
+        db.add(
+            membership
+        )
+        db.commit()
+
+    except Exception:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Account creation failed"
+            ),
+        )
+
+    db.refresh(
+        user
+    )
 
     return user_to_dict(
         user
@@ -433,10 +667,8 @@ def login_user(
     return {
         "access_token":
             access_token,
-
         "token_type":
             "bearer",
-
         "user":
             user_to_dict(
                 user
@@ -458,21 +690,18 @@ def get_me(
     )
 
 
-# --------------------------------------------------
-# Vehicles
-# --------------------------------------------------
-
-
 @app.post("/vehicle")
 def create_vehicle(
     vehicle: Vehicle,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     normalised_registration = (
@@ -481,14 +710,21 @@ def create_vehicle(
         )
     )
 
+    organisation = (
+        get_selected_organisation(
+            db,
+            current_user,
+            workspace_id,
+        )
+    )
+
     existing_vehicle = (
         db.query(VehicleDB)
         .filter(
             VehicleDB.registration
             == normalised_registration,
-
-            VehicleDB.owner_id
-            == current_user.id,
+            VehicleDB.organisation_id
+            == organisation.id,
         )
         .first()
     )
@@ -497,7 +733,8 @@ def create_vehicle(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Vehicle already exists"
+                "Vehicle already exists "
+                "in this workspace"
             ),
         )
 
@@ -509,14 +746,15 @@ def create_vehicle(
         model=vehicle.model,
         year=vehicle.year,
         owner_id=current_user.id,
+        organisation_id=(
+            organisation.id
+        ),
     )
 
     db.add(
         new_vehicle
     )
-
     db.commit()
-
     db.refresh(
         new_vehicle
     )
@@ -524,7 +762,6 @@ def create_vehicle(
     return {
         "message":
             "Vehicle received successfully!",
-
         "vehicle":
             new_vehicle,
     }
@@ -535,22 +772,26 @@ def get_vehicles(
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     query = (
         db.query(VehicleDB)
     )
 
-    if not is_admin(
-        current_user
-    ):
-        query = query.filter(
-            VehicleDB.owner_id
-            == current_user.id
+    query = (
+        apply_vehicle_access_filter(
+            query,
+            db,
+            current_user,
+            workspace_id,
         )
+    )
 
     return query.all()
 
@@ -560,13 +801,15 @@ def get_vehicles(
 )
 def get_vehicle(
     registration: str,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -574,15 +817,14 @@ def get_vehicle(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     return vehicle
@@ -594,13 +836,15 @@ def get_vehicle(
 def update_vehicle(
     registration: str,
     updated_vehicle: Vehicle,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -608,15 +852,14 @@ def update_vehicle(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     new_registration = (
@@ -625,41 +868,56 @@ def update_vehicle(
         )
     )
 
-    duplicate_vehicle = (
+    duplicate_query = (
         db.query(VehicleDB)
         .filter(
             VehicleDB.registration
             == new_registration,
-
-            VehicleDB.owner_id
-            == vehicle.owner_id,
-
             VehicleDB.id
             != vehicle.id,
         )
-        .first()
+    )
+
+    if (
+        vehicle.organisation_id
+        is not None
+    ):
+        duplicate_query = (
+            duplicate_query.filter(
+                VehicleDB.organisation_id
+                == vehicle.organisation_id
+            )
+        )
+    else:
+        duplicate_query = (
+            duplicate_query.filter(
+                VehicleDB.owner_id
+                == vehicle.owner_id
+            )
+        )
+
+    duplicate_vehicle = (
+        duplicate_query.first()
     )
 
     if duplicate_vehicle:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Vehicle already exists"
+                "Vehicle already exists "
+                "in this workspace"
             ),
         )
 
     vehicle.registration = (
         new_registration
     )
-
     vehicle.make = (
         updated_vehicle.make
     )
-
     vehicle.model = (
         updated_vehicle.model
     )
-
     vehicle.year = (
         updated_vehicle.year
     )
@@ -672,7 +930,6 @@ def update_vehicle(
     return {
         "message":
             "Vehicle updated successfully!",
-
         "vehicle":
             vehicle,
     }
@@ -683,13 +940,15 @@ def update_vehicle(
 )
 def delete_vehicle(
     registration: str,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -697,21 +956,19 @@ def delete_vehicle(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     db.delete(
         vehicle
     )
-
     db.commit()
 
     return {
@@ -726,13 +983,15 @@ def delete_vehicle(
 async def upload_damage_image(
     registration: str,
     image: UploadFile = File(...),
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -740,15 +999,14 @@ async def upload_damage_image(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     allowed_types = [
@@ -833,9 +1091,7 @@ async def upload_damage_image(
     db.add(
         damage_image
     )
-
     db.commit()
-
     db.refresh(
         damage_image
     )
@@ -846,17 +1102,13 @@ async def upload_damage_image(
                 "Damage image uploaded "
                 "successfully!"
             ),
-
         "registration":
             vehicle.registration,
-
         "image": {
             "id":
                 damage_image.id,
-
             "filename":
                 damage_image.filename,
-
             "file_path":
                 damage_image.file_path,
         },
@@ -868,13 +1120,15 @@ async def upload_damage_image(
 )
 def get_damage_images(
     registration: str,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -882,15 +1136,14 @@ def get_damage_images(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     damage_images = (
@@ -905,15 +1158,9 @@ def get_damage_images(
     return {
         "registration":
             vehicle.registration,
-
         "images":
             damage_images,
     }
-
-
-# --------------------------------------------------
-# Inspections
-# --------------------------------------------------
 
 
 @app.post(
@@ -921,13 +1168,15 @@ def get_damage_images(
 )
 def analyse_image(
     image_id: int,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     damage_image = (
@@ -935,6 +1184,7 @@ def analyse_image(
             db,
             image_id,
             current_user,
+            workspace_id,
         )
     )
 
@@ -953,7 +1203,6 @@ def analyse_image(
                 db=db,
             )
         )
-
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -986,77 +1235,55 @@ def analyse_image(
                 "Damage analysis completed "
                 "successfully!"
             ),
-
         "inspection": {
             "id":
                 inspection.id,
-
             "image_id":
                 inspection.damage_image_id,
-
             "status":
                 inspection.status,
-
             "damage_detected":
                 inspection.damage_detected,
-
             "damage_count":
                 inspection.damage_count,
-
             "highest_confidence":
                 inspection.highest_confidence,
-
             "severity":
                 inspection.severity,
-
             "severity_score":
                 inspection.severity_score,
-
             "severity_factors":
                 severity_factors,
-
             "review":
                 review,
-
             "model_thresholds":
                 model_thresholds,
-
             "model": {
                 "repository":
                     inspection.model_repository,
-
                 "checkpoint":
                     inspection.model_checkpoint,
-
                 "confidence_threshold":
                     inspection.confidence_threshold,
             },
-
             "detections": [
                 {
                     "id":
                         detection.id,
-
                     "damage_type":
                         detection.damage_type,
-
                     "confidence":
                         detection.confidence,
-
                     "bounding_box": {
                         "x1":
                             detection.x1,
-
                         "y1":
                             detection.y1,
-
                         "x2":
                             detection.x2,
-
                         "y2":
                             detection.y2,
                     },
-
                     "segmentation": (
                         json.loads(
                             detection.segmentation
@@ -1073,18 +1300,19 @@ def analyse_image(
 
 
 @app.get(
-    "/damage-images/"
-    "{image_id}/inspections"
+    "/damage-images/{image_id}/inspections"
 )
 def get_image_inspections(
     image_id: int,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     damage_image = (
@@ -1092,6 +1320,7 @@ def get_image_inspections(
             db,
             image_id,
             current_user,
+            workspace_id,
         )
     )
 
@@ -1118,87 +1347,64 @@ def get_image_inspections(
     return {
         "image_id":
             image_id,
-
         "inspection_count":
             len(inspections),
-
         "inspections": [
             {
                 "id":
                     inspection.id,
-
                 "status":
                     inspection.status,
-
                 "damage_detected":
                     inspection.damage_detected,
-
                 "damage_count":
                     inspection.damage_count,
-
                 "highest_confidence":
                     inspection.highest_confidence,
-
                 "severity":
                     inspection.severity,
-
                 "severity_score":
                     inspection.severity_score,
-
                 "severity_factors":
                     get_severity_factors(
                         inspection
                     ),
-
                 "review":
                     get_review_metadata(
                         inspection
                     ),
-
                 "model_thresholds":
                     get_model_thresholds(
                         inspection
                     ),
-
                 "created_at":
                     inspection.created_at,
-
                 "model": {
                     "repository":
                         inspection.model_repository,
-
                     "checkpoint":
                         inspection.model_checkpoint,
-
                     "confidence_threshold":
                         inspection.confidence_threshold,
                 },
-
                 "detections": [
                     {
                         "id":
                             detection.id,
-
                         "damage_type":
                             detection.damage_type,
-
                         "confidence":
                             detection.confidence,
-
                         "bounding_box": {
                             "x1":
                                 detection.x1,
-
                             "y1":
                                 detection.y1,
-
                             "x2":
                                 detection.x2,
-
                             "y2":
                                 detection.y2,
                         },
-
                         "segmentation": (
                             json.loads(
                                 detection.segmentation
@@ -1218,21 +1424,20 @@ def get_image_inspections(
 
 
 @app.get(
-    "/inspections/"
-    "{inspection_id}/report",
-    response_model=(
-        InspectionReportResponse
-    ),
+    "/inspections/{inspection_id}/report",
+    response_model=InspectionReportResponse,
 )
 def get_inspection_report(
     inspection_id: int,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     inspection = (
@@ -1240,6 +1445,7 @@ def get_inspection_report(
             db,
             inspection_id,
             current_user,
+            workspace_id,
         )
     )
 
@@ -1281,86 +1487,62 @@ def get_inspection_report(
         "report": {
             "inspection_id":
                 inspection.id,
-
             "created_at":
                 inspection.created_at,
-
             "status":
                 inspection.status,
-
             "vehicle": {
                 "registration":
                     vehicle.registration,
-
                 "make":
                     vehicle.make,
-
                 "model":
                     vehicle.model,
-
                 "year":
                     vehicle.year,
             },
-
             "image": {
                 "id":
                     damage_image.id,
-
                 "filename":
                     damage_image.filename,
             },
-
             "summary": {
                 "damage_detected":
                     inspection.damage_detected,
-
                 "damage_count":
                     inspection.damage_count,
-
                 "highest_confidence":
                     inspection.highest_confidence,
-
                 "severity":
                     inspection.severity,
-
                 "severity_score":
                     inspection.severity_score,
-
                 "severity_factors":
                     severity_factors,
-
                 "review":
                     review,
-
                 "model_thresholds":
                     model_thresholds,
             },
-
             "detections": [
                 {
                     "id":
                         detection.id,
-
                     "damage_type":
                         detection.damage_type,
-
                     "confidence":
                         detection.confidence,
-
                     "bounding_box": {
                         "x1":
                             detection.x1,
-
                         "y1":
                             detection.y1,
-
                         "x2":
                             detection.x2,
-
                         "y2":
                             detection.y2,
                     },
-
                     "segmentation": (
                         json.loads(
                             detection.segmentation
@@ -1372,14 +1554,11 @@ def get_inspection_report(
                 for detection
                 in inspection.detections
             ],
-
             "model": {
                 "repository":
                     inspection.model_repository,
-
                 "checkpoint":
                     inspection.model_checkpoint,
-
                 "confidence_threshold":
                     inspection.confidence_threshold,
             },
@@ -1388,21 +1567,20 @@ def get_inspection_report(
 
 
 @app.get(
-    "/vehicles/{registration}/"
-    "inspection-summary",
-    response_model=(
-        VehicleInspectionSummary
-    ),
+    "/vehicles/{registration}/inspection-summary",
+    response_model=VehicleInspectionSummary,
 )
 def get_vehicle_inspection_summary(
     registration: str,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -1410,15 +1588,14 @@ def get_vehicle_inspection_summary(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     all_inspections = []
@@ -1467,55 +1644,43 @@ def get_vehicle_inspection_summary(
     return {
         "registration":
             vehicle.registration,
-
         "vehicle": {
             "registration":
                 vehicle.registration,
-
             "make":
                 vehicle.make,
-
             "model":
                 vehicle.model,
-
             "year":
                 vehicle.year,
         },
-
         "total_images":
             len(
                 vehicle.damage_images
             ),
-
         "total_inspections":
             len(
                 all_inspections
             ),
-
         "damage_detected":
             damage_detected,
-
         "total_damage_detections":
             total_damage_detections,
-
         "latest_severity": (
             latest_inspection.severity
             if latest_inspection
             else None
         ),
-
         "latest_severity_score": (
             latest_inspection.severity_score
             if latest_inspection
             else None
         ),
-
         "latest_inspection_id": (
             latest_inspection.id
             if latest_inspection
             else None
         ),
-
         "latest_inspection_confidence": (
             latest_review.get(
                 "inspection_confidence"
@@ -1523,7 +1688,6 @@ def get_vehicle_inspection_summary(
             if latest_review
             else None
         ),
-
         "latest_manual_review_required": (
             latest_review.get(
                 "manual_review_required"
@@ -1534,11 +1698,6 @@ def get_vehicle_inspection_summary(
     }
 
 
-# --------------------------------------------------
-# Dashboard
-# --------------------------------------------------
-
-
 @app.get(
     "/dashboard/summary"
 )
@@ -1546,13 +1705,25 @@ def get_dashboard_summary(
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle_query = (
         db.query(VehicleDB)
+    )
+
+    vehicle_query = (
+        apply_vehicle_access_filter(
+            vehicle_query,
+            db,
+            current_user,
+            workspace_id,
+        )
     )
 
     inspection_query = (
@@ -1569,22 +1740,14 @@ def get_dashboard_summary(
         )
     )
 
-    if not is_admin(
-        current_user
-    ):
-        vehicle_query = (
-            vehicle_query.filter(
-                VehicleDB.owner_id
-                == current_user.id
-            )
+    inspection_query = (
+        apply_vehicle_access_filter(
+            inspection_query,
+            db,
+            current_user,
+            workspace_id,
         )
-
-        inspection_query = (
-            inspection_query.filter(
-                VehicleDB.owner_id
-                == current_user.id
-            )
-        )
+    )
 
     vehicles = (
         vehicle_query.all()
@@ -1613,12 +1776,9 @@ def get_dashboard_summary(
     )
 
     clear_inspections = 0
-
     manual_review_count = 0
 
-    for inspection in (
-        inspections
-    ):
+    for inspection in inspections:
         review = (
             get_review_metadata(
                 inspection
@@ -1658,22 +1818,19 @@ def get_dashboard_summary(
         )
     )
 
-    if not is_admin(
-        current_user
-    ):
-        recent_query = (
-            recent_query.filter(
-                VehicleDB.owner_id
-                == current_user.id
-            )
+    recent_query = (
+        apply_vehicle_access_filter(
+            recent_query,
+            db,
+            current_user,
+            workspace_id,
         )
+    )
 
     recent_inspections = (
         recent_query
         .order_by(
-            InspectionDB
-            .created_at
-            .desc()
+            InspectionDB.created_at.desc()
         )
         .limit(5)
         .all()
@@ -1682,36 +1839,26 @@ def get_dashboard_summary(
     return {
         "total_vehicles":
             total_vehicles,
-
         "total_inspections":
             total_inspections,
-
         "damage_detected":
             damage_detected,
-
         "clear_inspections":
             clear_inspections,
-
         "manual_review_count":
             manual_review_count,
-
         "recent_inspections": [
             {
                 "id":
                     inspection.id,
-
                 "damage_detected":
                     inspection.damage_detected,
-
                 "damage_count":
                     inspection.damage_count,
-
                 "severity":
                     inspection.severity,
-
                 "severity_score":
                     inspection.severity_score,
-
                 "inspection_confidence": (
                     (
                         get_review_metadata(
@@ -1722,7 +1869,6 @@ def get_dashboard_summary(
                         "inspection_confidence"
                     )
                 ),
-
                 "manual_review_required": (
                     (
                         get_review_metadata(
@@ -1733,10 +1879,8 @@ def get_dashboard_summary(
                         "manual_review_required"
                     )
                 ),
-
                 "created_at":
                     inspection.created_at,
-
                 "registration":
                     (
                         inspection
@@ -1744,7 +1888,6 @@ def get_dashboard_summary(
                         .vehicle
                         .registration
                     ),
-
                 "make":
                     (
                         inspection
@@ -1752,7 +1895,6 @@ def get_dashboard_summary(
                         .vehicle
                         .make
                     ),
-
                 "model":
                     (
                         inspection
@@ -1767,23 +1909,20 @@ def get_dashboard_summary(
     }
 
 
-# --------------------------------------------------
-# Delete operations
-# --------------------------------------------------
-
-
 @app.delete(
     "/damage-images/{image_id}"
 )
 def delete_damage_image(
     image_id: int,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     damage_image = (
@@ -1791,6 +1930,7 @@ def delete_damage_image(
             db,
             image_id,
             current_user,
+            workspace_id,
         )
     )
 
@@ -1809,7 +1949,6 @@ def delete_damage_image(
     db.delete(
         damage_image
     )
-
     db.commit()
 
     if (
@@ -1836,13 +1975,15 @@ def delete_damage_image(
 )
 def delete_vehicle_and_data(
     registration: str,
-
     db: Session = Depends(
         get_db
     ),
-
     current_user: UserDB = Depends(
         get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
     ),
 ):
     vehicle = (
@@ -1850,15 +1991,14 @@ def delete_vehicle_and_data(
             db,
             registration,
             current_user,
+            workspace_id,
         )
     )
 
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Vehicle not found"
-            ),
+            detail="Vehicle not found",
         )
 
     image_paths = [
@@ -1870,7 +2010,6 @@ def delete_vehicle_and_data(
     db.delete(
         vehicle
     )
-
     db.commit()
 
     for file_path in (

@@ -174,14 +174,23 @@ def test_duplicate_vehicle(
         "year": 2024,
     }
 
-    authenticated_client.post(
-        "/vehicle",
-        json=vehicle_data,
+    first_response = (
+        authenticated_client.post(
+            "/vehicle",
+            json=vehicle_data,
+        )
     )
 
-    response = authenticated_client.post(
-        "/vehicle",
-        json=vehicle_data,
+    assert (
+        first_response.status_code
+        == 200
+    )
+
+    response = (
+        authenticated_client.post(
+            "/vehicle",
+            json=vehicle_data,
+        )
     )
 
     assert (
@@ -191,7 +200,10 @@ def test_duplicate_vehicle(
 
     assert (
         response.json()["detail"]
-        == "Vehicle already exists"
+        == (
+            "Vehicle already exists "
+            "in this workspace"
+        )
     )
 
 
