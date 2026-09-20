@@ -1,8 +1,15 @@
 import json
 
 from app.models import (
-    InspectionDB,
+    AuditLogDB,
     DamageDetectionDB,
+    InspectionDB,
+    OrganisationMembershipDB,
+)
+
+
+from conftest import (
+    TestingSessionLocal,
 )
 
 
@@ -96,9 +103,8 @@ def create_user_headers(
     ]
 
     return {
-        "Authorization": (
-            f"Bearer {token}"
-        ),
+        "Authorization":
+            f"Bearer {token}",
     }
 
 
@@ -377,19 +383,329 @@ def test_upload_damage_image(
     )
 
     assert (
-        response.json()[
-            "registration"
-        ]
+        response.json()["registration"]
         == "IMG12CAR"
     )
 
+    image_data = response.json()["image"]
+
     assert (
-        response.json()[
-            "image"
-        ]["filename"]
+        image_data["filename"]
         .endswith(
             "_damage.jpg"
         )
+    )
+
+    assert (
+        "file_path"
+        not in image_data
+    )
+
+    assert (
+        image_data["content_url"]
+        == (
+            f"/damage-images/"
+            f"{image_data['id']}/content"
+        )
+    )
+
+
+def test_damage_image_list_hides_file_path(
+    authenticated_client,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "SAFE12CAR",
+            "make":
+                "BMW",
+            "model":
+                "M4",
+            "year":
+                2024,
+        },
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "safe12car/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "damage.png",
+                    b"fake-image-data",
+                    "image/png",
+                )
+            },
+        )
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    response = authenticated_client.get(
+        (
+            "/vehicles/"
+            "safe12car/"
+            "damage-images"
+        )
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    images = (
+        response.json()["images"]
+    )
+
+    assert len(images) == 1
+
+    assert (
+        "file_path"
+        not in images[0]
+    )
+
+    assert (
+        images[0]["content_url"]
+        == (
+            f"/damage-images/"
+            f"{images[0]['id']}/content"
+        )
+    )
+
+
+def test_authenticated_user_can_fetch_own_image(
+    authenticated_client,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "OWN12IMG",
+            "make":
+                "Audi",
+            "model":
+                "A3",
+            "year":
+                2023,
+        },
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "own12img/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "damage.jpg",
+                    b"image-bytes",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    response = authenticated_client.get(
+        (
+            f"/damage-images/"
+            f"{image_id}/content"
+        )
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    assert (
+        response.content
+        == b"image-bytes"
+    )
+
+    assert (
+        response.headers[
+            "content-type"
+        ].startswith(
+            "image/jpeg"
+        )
+    )
+
+    assert (
+        response.headers[
+            "cache-control"
+        ]
+        == "private, no-store"
+    )
+
+
+def test_image_content_requires_auth(
+    client,
+    authenticated_client,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "AUTH12IMG",
+            "make":
+                "BMW",
+            "model":
+                "M3",
+            "year":
+                2024,
+        },
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "auth12img/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "damage.jpg",
+                    b"image-bytes",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    client.headers.pop(
+        "Authorization",
+        None,
+    )
+
+    response = client.get(
+        (
+            f"/damage-images/"
+            f"{image_id}/content"
+        )
+    )
+
+    assert (
+        response.status_code
+        == 401
+    )
+
+
+def test_other_user_cannot_fetch_private_image(
+    client,
+):
+    owner_headers = (
+        create_user_headers(
+            client,
+            "imageowner@example.com",
+            "Image Owner",
+        )
+    )
+
+    outsider_headers = (
+        create_user_headers(
+            client,
+            "imageoutsider@example.com",
+            "Image Outsider",
+        )
+    )
+
+    create_response = client.post(
+        "/vehicle",
+        headers=owner_headers,
+        json={
+            "registration":
+                "PRIVATEIMG",
+            "make":
+                "Mercedes",
+            "model":
+                "A35",
+            "year":
+                2024,
+        },
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    upload_response = client.post(
+        (
+            "/vehicles/"
+            "privateimg/"
+            "damage-image"
+        ),
+        headers=owner_headers,
+        files={
+            "image": (
+                "private.jpg",
+                b"private-image",
+                "image/jpeg",
+            )
+        },
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    response = client.get(
+        (
+            f"/damage-images/"
+            f"{image_id}/content"
+        ),
+        headers=outsider_headers,
+    )
+
+    assert (
+        response.status_code
+        == 404
+    )
+
+    assert (
+        response.json()["detail"]
+        == "Damage image not found"
     )
 
 
@@ -557,9 +873,9 @@ def test_analyse_damage_image(
         == 200
     )
 
-    inspection = response.json()[
-        "inspection"
-    ]
+    inspection = (
+        response.json()["inspection"]
+    )
 
     assert (
         inspection["status"]
@@ -878,9 +1194,9 @@ def test_get_inspection_report(
         == 200
     )
 
-    report = response.json()[
-        "report"
-    ]
+    report = (
+        response.json()["report"]
+    )
 
     assert (
         report["inspection_id"]
@@ -1426,4 +1742,637 @@ def test_user_vehicle_list_is_isolated(
     assert (
         other_response.json()
         == []
+    )
+
+def get_audit_log(
+    action,
+):
+    db = TestingSessionLocal()
+
+    try:
+        return (
+            db.query(AuditLogDB)
+            .filter(
+                AuditLogDB.action
+                == action
+            )
+            .order_by(
+                AuditLogDB.id.desc()
+            )
+            .first()
+        )
+
+    finally:
+        db.close()
+
+
+def create_account_with_id(
+    client,
+    email,
+    full_name,
+):
+    password = "Password123"
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": password,
+            "full_name": full_name,
+        },
+    )
+
+    assert (
+        register_response.status_code
+        == 201
+    )
+
+    user_id = (
+        register_response.json()["id"]
+    )
+
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+    )
+
+    assert (
+        login_response.status_code
+        == 200
+    )
+
+    token = login_response.json()[
+        "access_token"
+    ]
+
+    return (
+        user_id,
+        {
+            "Authorization":
+                f"Bearer {token}",
+        },
+    )
+
+
+def test_vehicle_update_creates_audit_log(
+    authenticated_client,
+):
+    create_response = (
+        authenticated_client.post(
+            "/vehicle",
+            json={
+                "registration":
+                    "AUDITUP1",
+                "make":
+                    "BMW",
+                "model":
+                    "M3",
+                "year":
+                    2024,
+            },
+        )
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    vehicle_id = (
+        create_response.json()[
+            "vehicle"
+        ]["id"]
+    )
+
+    response = authenticated_client.put(
+        "/vehicles/AUDITUP1",
+        json={
+            "registration":
+                "AUDITUP1",
+            "make":
+                "BMW",
+            "model":
+                "M3 Competition",
+            "year":
+                2025,
+        },
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    audit_log = get_audit_log(
+        "vehicle.update"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.entity_type
+        == "vehicle"
+    )
+
+    assert (
+        audit_log.entity_id
+        == vehicle_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["before"]["model"]
+        == "M3"
+    )
+
+    assert (
+        details["after"]["model"]
+        == "M3 Competition"
+    )
+
+
+def test_vehicle_delete_creates_audit_log(
+    authenticated_client,
+):
+    create_response = (
+        authenticated_client.post(
+            "/vehicle",
+            json={
+                "registration":
+                    "AUDITDEL1",
+                "make":
+                    "Audi",
+                "model":
+                    "RS3",
+                "year":
+                    2024,
+            },
+        )
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    vehicle_id = (
+        create_response.json()[
+            "vehicle"
+        ]["id"]
+    )
+
+    response = authenticated_client.delete(
+        "/vehicles/AUDITDEL1"
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    audit_log = get_audit_log(
+        "vehicle.delete"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.entity_id
+        == vehicle_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["registration"]
+        == "AUDITDEL1"
+    )
+
+
+def test_damage_image_delete_creates_audit_log(
+    authenticated_client,
+):
+    create_response = (
+        authenticated_client.post(
+            "/vehicle",
+            json={
+                "registration":
+                    "AUDITIMG1",
+                "make":
+                    "Mercedes",
+                "model":
+                    "A35",
+                "year":
+                    2024,
+            },
+        )
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "AUDITIMG1/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "audit.jpg",
+                    b"audit-image-data",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    response = authenticated_client.delete(
+        (
+            f"/damage-images/"
+            f"{image_id}"
+        )
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    audit_log = get_audit_log(
+        "damage_image.delete"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.entity_type
+        == "damage_image"
+    )
+
+    assert (
+        audit_log.entity_id
+        == image_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["registration"]
+        == "AUDITIMG1"
+    )
+
+
+def test_member_add_creates_audit_log(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account_with_id(
+        client,
+        "auditowner@example.com",
+        "Audit Owner",
+    )
+
+    (
+        member_id,
+        _,
+    ) = create_account_with_id(
+        client,
+        "auditmember@example.com",
+        "Audit Member",
+    )
+
+    db = TestingSessionLocal()
+
+    try:
+        owner_membership = (
+            db.query(
+                OrganisationMembershipDB
+            )
+            .filter(
+                OrganisationMembershipDB.user_id
+                == owner_id
+            )
+            .first()
+        )
+
+        assert (
+            owner_membership
+            is not None
+        )
+
+        organisation_id = (
+            owner_membership
+            .organisation_id
+        )
+
+    finally:
+        db.close()
+
+    response = client.post(
+        (
+            f"/organisations/"
+            f"{organisation_id}/members"
+        ),
+        headers=owner_headers,
+        json={
+            "email":
+                "auditmember@example.com",
+            "role":
+                "member",
+        },
+    )
+
+    assert (
+        response.status_code
+        == 201
+    )
+
+    membership_id = (
+        response.json()[
+            "membership_id"
+        ]
+    )
+
+    audit_log = get_audit_log(
+        "membership.add"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.actor_user_id
+        == owner_id
+    )
+
+    assert (
+        audit_log.organisation_id
+        == organisation_id
+    )
+
+    assert (
+        audit_log.entity_id
+        == membership_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["target_user_id"]
+        == member_id
+    )
+
+    assert (
+        details["role"]
+        == "member"
+    )
+
+
+def test_member_role_update_creates_audit_log(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account_with_id(
+        client,
+        "auditroleowner@example.com",
+        "Audit Role Owner",
+    )
+
+    (
+        member_id,
+        _,
+    ) = create_account_with_id(
+        client,
+        "auditroleuser@example.com",
+        "Audit Role User",
+    )
+
+    db = TestingSessionLocal()
+
+    try:
+        owner_membership = (
+            db.query(
+                OrganisationMembershipDB
+            )
+            .filter(
+                OrganisationMembershipDB.user_id
+                == owner_id
+            )
+            .first()
+        )
+
+        assert owner_membership is not None
+
+        organisation_id = (
+            owner_membership.organisation_id
+        )
+
+    finally:
+        db.close()
+
+    add_response = client.post(
+        (
+            f"/organisations/"
+            f"{organisation_id}/members"
+        ),
+        headers=owner_headers,
+        json={
+            "email":
+                "auditroleuser@example.com",
+            "role":
+                "member",
+        },
+    )
+
+    assert (
+        add_response.status_code
+        == 201
+    )
+
+    membership_id = (
+        add_response.json()[
+            "membership_id"
+        ]
+    )
+
+    response = client.patch(
+        (
+            f"/organisations/"
+            f"{organisation_id}/members/"
+            f"{member_id}"
+        ),
+        headers=owner_headers,
+        json={
+            "role":
+                "admin",
+        },
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    audit_log = get_audit_log(
+        "membership.role_update"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.entity_id
+        == membership_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["before_role"]
+        == "member"
+    )
+
+    assert (
+        details["after_role"]
+        == "admin"
+    )
+
+
+def test_member_remove_creates_audit_log(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account_with_id(
+        client,
+        "auditremoveowner@example.com",
+        "Audit Remove Owner",
+    )
+
+    (
+        member_id,
+        _,
+    ) = create_account_with_id(
+        client,
+        "auditremoveuser@example.com",
+        "Audit Remove User",
+    )
+
+    db = TestingSessionLocal()
+
+    try:
+        owner_membership = (
+            db.query(
+                OrganisationMembershipDB
+            )
+            .filter(
+                OrganisationMembershipDB.user_id
+                == owner_id
+            )
+            .first()
+        )
+
+        assert owner_membership is not None
+
+        organisation_id = (
+            owner_membership.organisation_id
+        )
+
+    finally:
+        db.close()
+
+    add_response = client.post(
+        (
+            f"/organisations/"
+            f"{organisation_id}/members"
+        ),
+        headers=owner_headers,
+        json={
+            "email":
+                "auditremoveuser@example.com",
+            "role":
+                "member",
+        },
+    )
+
+    assert (
+        add_response.status_code
+        == 201
+    )
+
+    membership_id = (
+        add_response.json()[
+            "membership_id"
+        ]
+    )
+
+    response = client.delete(
+        (
+            f"/organisations/"
+            f"{organisation_id}/members/"
+            f"{member_id}"
+        ),
+        headers=owner_headers,
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    audit_log = get_audit_log(
+        "membership.remove"
+    )
+
+    assert audit_log is not None
+
+    assert (
+        audit_log.entity_id
+        == membership_id
+    )
+
+    details = json.loads(
+        audit_log.details
+    )
+
+    assert (
+        details["target_user_id"]
+        == member_id
+    )
+
+    assert (
+        details["role"]
+        == "member"
     )

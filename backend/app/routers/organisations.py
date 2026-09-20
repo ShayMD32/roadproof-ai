@@ -6,6 +6,10 @@ from fastapi import (
 
 from sqlalchemy.orm import Session
 
+from app.audit import (
+    create_audit_log,
+)
+
 from app.auth import (
     get_current_user,
 )
@@ -612,6 +616,27 @@ def add_member(
         membership
     )
 
+    db.flush()
+
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="membership.add",
+        entity_type="membership",
+        entity_id=membership.id,
+        details={
+            "target_user_id":
+                user.id,
+            "target_email":
+                user.email,
+            "role":
+                role,
+        },
+    )
+
     db.commit()
 
     db.refresh(
@@ -702,7 +727,32 @@ def update_member_role(
             ),
         )
 
+    old_role = (
+        membership.role
+    )
+
     membership.role = role
+
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="membership.role_update",
+        entity_type="membership",
+        entity_id=membership.id,
+        details={
+            "target_user_id":
+                membership.user_id,
+            "target_email":
+                membership.user.email,
+            "before_role":
+                old_role,
+            "after_role":
+                role,
+        },
+    )
 
     db.commit()
 
@@ -793,6 +843,41 @@ def remove_member(
                 "remove other administrators"
             ),
         )
+
+    membership_id = (
+        membership.id
+    )
+
+    target_user_id = (
+        membership.user_id
+    )
+
+    target_email = (
+        membership.user.email
+    )
+
+    target_role = (
+        membership.role
+    )
+
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="membership.remove",
+        entity_type="membership",
+        entity_id=membership_id,
+        details={
+            "target_user_id":
+                target_user_id,
+            "target_email":
+                target_email,
+            "role":
+                target_role,
+        },
+    )
 
     db.delete(
         membership

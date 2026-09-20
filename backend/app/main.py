@@ -11,10 +11,11 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.audit import create_audit_log
 from app.auth import (
     create_access_token,
     get_current_user,
@@ -29,6 +30,9 @@ from app.models import (
     OrganisationMembershipDB,
     UserDB,
     VehicleDB,
+)
+from app.permissions import (
+    require_vehicle_write_permission,
 )
 from app.routers.organisations import (
     router as organisations_router,
@@ -114,7 +118,9 @@ def get_user_organisation_ids(
 def get_user_memberships(
     db: Session,
     user: UserDB,
-) -> list[OrganisationMembershipDB]:
+) -> list[
+    OrganisationMembershipDB
+]:
     return (
         db.query(
             OrganisationMembershipDB
@@ -145,7 +151,9 @@ def get_selected_organisation(
 
     if workspace_id is not None:
         organisation = (
-            db.query(OrganisationDB)
+            db.query(
+                OrganisationDB
+            )
             .filter(
                 OrganisationDB.id
                 == workspace_id,
@@ -221,25 +229,6 @@ def get_selected_organisation(
     )
 
 
-def get_primary_organisation(
-    db: Session,
-    user: UserDB,
-) -> OrganisationDB | None:
-    memberships = (
-        get_user_memberships(
-            db,
-            user,
-        )
-    )
-
-    if not memberships:
-        return None
-
-    return memberships[
-        0
-    ].organisation
-
-
 def get_severity_factors(
     inspection: InspectionDB,
 ) -> dict:
@@ -250,6 +239,7 @@ def get_severity_factors(
         return json.loads(
             inspection.severity_factors
         )
+
     except json.JSONDecodeError:
         return {}
 
@@ -257,8 +247,10 @@ def get_severity_factors(
 def get_review_metadata(
     inspection: InspectionDB,
 ) -> dict | None:
-    factors = get_severity_factors(
-        inspection
+    factors = (
+        get_severity_factors(
+            inspection
+        )
     )
 
     review = factors.get(
@@ -277,8 +269,10 @@ def get_review_metadata(
 def get_model_thresholds(
     inspection: InspectionDB,
 ) -> dict | None:
-    factors = get_severity_factors(
-        inspection
+    factors = (
+        get_severity_factors(
+            inspection
+        )
     )
 
     thresholds = factors.get(
@@ -298,12 +292,110 @@ def user_to_dict(
     user: UserDB,
 ) -> dict:
     return {
-        "id": user.id,
-        "email": user.email,
-        "full_name": user.full_name,
-        "is_active": user.is_active,
-        "created_at": user.created_at,
+        "id":
+            user.id,
+
+        "email":
+            user.email,
+
+        "full_name":
+            user.full_name,
+
+        "is_active":
+            user.is_active,
+
+        "created_at":
+            user.created_at,
     }
+
+
+def damage_image_to_dict(
+    damage_image: DamageImageDB,
+) -> dict:
+    return {
+        "id":
+            damage_image.id,
+
+        "filename":
+            damage_image.filename,
+
+        "content_url": (
+            f"/damage-images/"
+            f"{damage_image.id}/content"
+        ),
+    }
+
+
+def get_safe_image_path(
+    damage_image: DamageImageDB,
+) -> str:
+    upload_root = (
+        os.path.abspath(
+            "uploads"
+        )
+    )
+
+    image_path = (
+        os.path.abspath(
+            damage_image.file_path
+        )
+    )
+
+    try:
+        common_path = (
+            os.path.commonpath(
+                [
+                    upload_root,
+                    image_path,
+                ]
+            )
+        )
+
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Damage image file "
+                "not found"
+            ),
+        )
+
+    if common_path != upload_root:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Damage image file "
+                "not found"
+            ),
+        )
+
+    if not os.path.isfile(
+        image_path
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Damage image file "
+                "not found"
+            ),
+        )
+
+    return image_path
+
+
+def get_image_media_type(
+    filename: str,
+) -> str:
+    lower_filename = (
+        filename.lower()
+    )
+
+    if lower_filename.endswith(
+        ".png"
+    ):
+        return "image/png"
+
+    return "image/jpeg"
 
 
 def apply_vehicle_access_filter(
@@ -343,7 +435,9 @@ def get_vehicle_for_user(
     )
 
     base_query = (
-        db.query(VehicleDB)
+        db.query(
+            VehicleDB
+        )
         .filter(
             VehicleDB.registration
             == normalised_registration
@@ -351,7 +445,9 @@ def get_vehicle_for_user(
     )
 
     if (
-        is_admin(current_user)
+        is_admin(
+            current_user
+        )
         and workspace_id is None
     ):
         organisation_ids = (
@@ -365,7 +461,8 @@ def get_vehicle_for_user(
             own_workspace_vehicle = (
                 base_query
                 .filter(
-                    VehicleDB.organisation_id.in_(
+                    VehicleDB.organisation_id
+                    .in_(
                         organisation_ids
                     )
                 )
@@ -373,7 +470,9 @@ def get_vehicle_for_user(
             )
 
             if own_workspace_vehicle:
-                return own_workspace_vehicle
+                return (
+                    own_workspace_vehicle
+                )
 
         own_vehicle = (
             base_query
@@ -407,7 +506,9 @@ def get_damage_image_for_user(
     workspace_id: int | None = None,
 ) -> DamageImageDB | None:
     query = (
-        db.query(DamageImageDB)
+        db.query(
+            DamageImageDB
+        )
         .join(
             VehicleDB,
             DamageImageDB.vehicle_id
@@ -438,7 +539,9 @@ def get_inspection_for_user(
     workspace_id: int | None = None,
 ) -> InspectionDB | None:
     query = (
-        db.query(InspectionDB)
+        db.query(
+            InspectionDB
+        )
         .join(
             DamageImageDB,
             InspectionDB.damage_image_id
@@ -480,9 +583,15 @@ def health():
     return {
         "status":
             "Server Running",
+
         "version":
             "1.0",
     }
+
+
+# --------------------------------------------------
+# Authentication
+# --------------------------------------------------
 
 
 @app.post(
@@ -497,7 +606,9 @@ def register_user(
     ),
 ):
     email = (
-        str(request.email)
+        str(
+            request.email
+        )
         .strip()
         .lower()
     )
@@ -510,10 +621,14 @@ def register_user(
     if not full_name:
         raise HTTPException(
             status_code=400,
-            detail="Full name is required",
+            detail=(
+                "Full name is required"
+            ),
         )
 
-    if len(request.password) < 8:
+    if len(
+        request.password
+    ) < 8:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -523,7 +638,9 @@ def register_user(
         )
 
     existing_user = (
-        db.query(UserDB)
+        db.query(
+            UserDB
+        )
         .filter(
             UserDB.email
             == email
@@ -540,20 +657,25 @@ def register_user(
             ),
         )
 
-    user = UserDB(
-        email=email,
-        full_name=full_name,
-        password_hash=(
-            hash_password(
-                request.password
-            )
-        ),
-        role="user",
-        is_active=True,
+    user = (
+        UserDB(
+            email=email,
+            full_name=full_name,
+            password_hash=(
+                hash_password(
+                    request.password
+                )
+            ),
+            role="user",
+            is_active=True,
+        )
     )
 
     try:
-        db.add(user)
+        db.add(
+            user
+        )
+
         db.flush()
 
         organisation = (
@@ -571,6 +693,7 @@ def register_user(
         db.add(
             organisation
         )
+
         db.flush()
 
         membership = (
@@ -586,6 +709,7 @@ def register_user(
         db.add(
             membership
         )
+
         db.commit()
 
     except Exception:
@@ -618,13 +742,17 @@ def login_user(
     ),
 ):
     email = (
-        str(request.email)
+        str(
+            request.email
+        )
         .strip()
         .lower()
     )
 
     user = (
-        db.query(UserDB)
+        db.query(
+            UserDB
+        )
         .filter(
             UserDB.email
             == email
@@ -667,8 +795,10 @@ def login_user(
     return {
         "access_token":
             access_token,
+
         "token_type":
             "bearer",
+
         "user":
             user_to_dict(
                 user
@@ -690,7 +820,14 @@ def get_me(
     )
 
 
-@app.post("/vehicle")
+# --------------------------------------------------
+# Vehicles
+# --------------------------------------------------
+
+
+@app.post(
+    "/vehicle"
+)
 def create_vehicle(
     vehicle: Vehicle,
     db: Session = Depends(
@@ -719,7 +856,9 @@ def create_vehicle(
     )
 
     existing_vehicle = (
-        db.query(VehicleDB)
+        db.query(
+            VehicleDB
+        )
         .filter(
             VehicleDB.registration
             == normalised_registration,
@@ -738,23 +877,27 @@ def create_vehicle(
             ),
         )
 
-    new_vehicle = VehicleDB(
-        registration=(
-            normalised_registration
-        ),
-        make=vehicle.make,
-        model=vehicle.model,
-        year=vehicle.year,
-        owner_id=current_user.id,
-        organisation_id=(
-            organisation.id
-        ),
+    new_vehicle = (
+        VehicleDB(
+            registration=(
+                normalised_registration
+            ),
+            make=vehicle.make,
+            model=vehicle.model,
+            year=vehicle.year,
+            owner_id=current_user.id,
+            organisation_id=(
+                organisation.id
+            ),
+        )
     )
 
     db.add(
         new_vehicle
     )
+
     db.commit()
+
     db.refresh(
         new_vehicle
     )
@@ -762,12 +905,15 @@ def create_vehicle(
     return {
         "message":
             "Vehicle received successfully!",
+
         "vehicle":
             new_vehicle,
     }
 
 
-@app.get("/vehicles")
+@app.get(
+    "/vehicles"
+)
 def get_vehicles(
     db: Session = Depends(
         get_db
@@ -781,7 +927,9 @@ def get_vehicles(
     ),
 ):
     query = (
-        db.query(VehicleDB)
+        db.query(
+            VehicleDB
+        )
     )
 
     query = (
@@ -824,7 +972,9 @@ def get_vehicle(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
 
     return vehicle
@@ -859,8 +1009,27 @@ def update_vehicle(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
+
+    require_vehicle_write_permission(
+        db,
+        current_user,
+        vehicle,
+    )
+
+    old_values = {
+        "registration":
+            vehicle.registration,
+        "make":
+            vehicle.make,
+        "model":
+            vehicle.model,
+        "year":
+            vehicle.year,
+    }
 
     new_registration = (
         normalise_registration(
@@ -869,7 +1038,9 @@ def update_vehicle(
     )
 
     duplicate_query = (
-        db.query(VehicleDB)
+        db.query(
+            VehicleDB
+        )
         .filter(
             VehicleDB.registration
             == new_registration,
@@ -888,6 +1059,7 @@ def update_vehicle(
                 == vehicle.organisation_id
             )
         )
+
     else:
         duplicate_query = (
             duplicate_query.filter(
@@ -912,17 +1084,46 @@ def update_vehicle(
     vehicle.registration = (
         new_registration
     )
+
     vehicle.make = (
         updated_vehicle.make
     )
+
     vehicle.model = (
         updated_vehicle.model
     )
+
     vehicle.year = (
         updated_vehicle.year
     )
 
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            vehicle.organisation_id
+        ),
+        action="vehicle.update",
+        entity_type="vehicle",
+        entity_id=vehicle.id,
+        details={
+            "before":
+                old_values,
+            "after": {
+                "registration":
+                    vehicle.registration,
+                "make":
+                    vehicle.make,
+                "model":
+                    vehicle.model,
+                "year":
+                    vehicle.year,
+            },
+        },
+    )
+
     db.commit()
+
     db.refresh(
         vehicle
     )
@@ -930,6 +1131,7 @@ def update_vehicle(
     return {
         "message":
             "Vehicle updated successfully!",
+
         "vehicle":
             vehicle,
     }
@@ -963,18 +1165,59 @@ def delete_vehicle(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
+
+    require_vehicle_write_permission(
+        db,
+        current_user,
+        vehicle,
+    )
+
+    vehicle_id = (
+        vehicle.id
+    )
+
+    organisation_id = (
+        vehicle.organisation_id
+    )
+
+    registration_value = (
+        vehicle.registration
+    )
+
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="vehicle.delete",
+        entity_type="vehicle",
+        entity_id=vehicle_id,
+        details={
+            "registration":
+                registration_value,
+        },
+    )
 
     db.delete(
         vehicle
     )
+
     db.commit()
 
     return {
         "message":
             "Vehicle deleted successfully!"
     }
+
+
+# --------------------------------------------------
+# Damage images
+# --------------------------------------------------
 
 
 @app.post(
@@ -1006,7 +1249,9 @@ async def upload_damage_image(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
 
     allowed_types = [
@@ -1035,7 +1280,9 @@ async def upload_damage_image(
     )
 
     if (
-        len(contents)
+        len(
+            contents
+        )
         > max_file_size
     ):
         raise HTTPException(
@@ -1091,7 +1338,9 @@ async def upload_damage_image(
     db.add(
         damage_image
     )
+
     db.commit()
+
     db.refresh(
         damage_image
     )
@@ -1102,16 +1351,14 @@ async def upload_damage_image(
                 "Damage image uploaded "
                 "successfully!"
             ),
+
         "registration":
             vehicle.registration,
-        "image": {
-            "id":
-                damage_image.id,
-            "filename":
-                damage_image.filename,
-            "file_path":
-                damage_image.file_path,
-        },
+
+        "image":
+            damage_image_to_dict(
+                damage_image
+            ),
     }
 
 
@@ -1143,14 +1390,21 @@ def get_damage_images(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
 
     damage_images = (
-        db.query(DamageImageDB)
+        db.query(
+            DamageImageDB
+        )
         .filter(
             DamageImageDB.vehicle_id
             == vehicle.id
+        )
+        .order_by(
+            DamageImageDB.id
         )
         .all()
     )
@@ -1158,9 +1412,75 @@ def get_damage_images(
     return {
         "registration":
             vehicle.registration,
-        "images":
-            damage_images,
+
+        "images": [
+            damage_image_to_dict(
+                damage_image
+            )
+            for damage_image
+            in damage_images
+        ],
     }
+
+
+@app.get(
+    "/damage-images/{image_id}/content"
+)
+def get_damage_image_content(
+    image_id: int,
+    db: Session = Depends(
+        get_db
+    ),
+    current_user: UserDB = Depends(
+        get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
+    ),
+):
+    damage_image = (
+        get_damage_image_for_user(
+            db,
+            image_id,
+            current_user,
+            workspace_id,
+        )
+    )
+
+    if not damage_image:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Damage image not found"
+            ),
+        )
+
+    image_path = (
+        get_safe_image_path(
+            damage_image
+        )
+    )
+
+    media_type = (
+        get_image_media_type(
+            damage_image.filename
+        )
+    )
+
+    return FileResponse(
+        path=image_path,
+        media_type=media_type,
+        headers={
+            "Cache-Control":
+                "private, no-store",
+        },
+    )
+
+
+# --------------------------------------------------
+# Inspections
+# --------------------------------------------------
 
 
 @app.post(
@@ -1203,6 +1523,7 @@ def analyse_image(
                 db=db,
             )
         )
+
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -1235,55 +1556,77 @@ def analyse_image(
                 "Damage analysis completed "
                 "successfully!"
             ),
+
         "inspection": {
             "id":
                 inspection.id,
+
             "image_id":
                 inspection.damage_image_id,
+
             "status":
                 inspection.status,
+
             "damage_detected":
                 inspection.damage_detected,
+
             "damage_count":
                 inspection.damage_count,
+
             "highest_confidence":
                 inspection.highest_confidence,
+
             "severity":
                 inspection.severity,
+
             "severity_score":
                 inspection.severity_score,
+
             "severity_factors":
                 severity_factors,
+
             "review":
                 review,
+
             "model_thresholds":
                 model_thresholds,
+
             "model": {
                 "repository":
                     inspection.model_repository,
+
                 "checkpoint":
                     inspection.model_checkpoint,
+
                 "confidence_threshold":
                     inspection.confidence_threshold,
             },
+
             "detections": [
                 {
                     "id":
                         detection.id,
+
                     "damage_type":
                         detection.damage_type,
+
                     "confidence":
                         detection.confidence,
+
                     "bounding_box": {
                         "x1":
                             detection.x1,
+
                         "y1":
                             detection.y1,
+
                         "x2":
                             detection.x2,
+
                         "y2":
                             detection.y2,
                     },
+
                     "segmentation": (
                         json.loads(
                             detection.segmentation
@@ -1333,13 +1676,16 @@ def get_image_inspections(
         )
 
     inspections = (
-        db.query(InspectionDB)
+        db.query(
+            InspectionDB
+        )
         .filter(
             InspectionDB.damage_image_id
             == image_id
         )
         .order_by(
-            InspectionDB.created_at.desc()
+            InspectionDB.created_at
+            .desc()
         )
         .all()
     )
@@ -1347,64 +1693,89 @@ def get_image_inspections(
     return {
         "image_id":
             image_id,
+
         "inspection_count":
-            len(inspections),
+            len(
+                inspections
+            ),
+
         "inspections": [
             {
                 "id":
                     inspection.id,
+
                 "status":
                     inspection.status,
+
                 "damage_detected":
                     inspection.damage_detected,
+
                 "damage_count":
                     inspection.damage_count,
+
                 "highest_confidence":
                     inspection.highest_confidence,
+
                 "severity":
                     inspection.severity,
+
                 "severity_score":
                     inspection.severity_score,
+
                 "severity_factors":
                     get_severity_factors(
                         inspection
                     ),
+
                 "review":
                     get_review_metadata(
                         inspection
                     ),
+
                 "model_thresholds":
                     get_model_thresholds(
                         inspection
                     ),
+
                 "created_at":
                     inspection.created_at,
+
                 "model": {
                     "repository":
                         inspection.model_repository,
+
                     "checkpoint":
                         inspection.model_checkpoint,
+
                     "confidence_threshold":
                         inspection.confidence_threshold,
                 },
+
                 "detections": [
                     {
                         "id":
                             detection.id,
+
                         "damage_type":
                             detection.damage_type,
+
                         "confidence":
                             detection.confidence,
+
                         "bounding_box": {
                             "x1":
                                 detection.x1,
+
                             "y1":
                                 detection.y1,
+
                             "x2":
                                 detection.x2,
+
                             "y2":
                                 detection.y2,
                         },
+
                         "segmentation": (
                             json.loads(
                                 detection.segmentation
@@ -1424,8 +1795,11 @@ def get_image_inspections(
 
 
 @app.get(
-    "/inspections/{inspection_id}/report",
-    response_model=InspectionReportResponse,
+    "/inspections/"
+    "{inspection_id}/report",
+    response_model=(
+        InspectionReportResponse
+    ),
 )
 def get_inspection_report(
     inspection_id: int,
@@ -1487,62 +1861,86 @@ def get_inspection_report(
         "report": {
             "inspection_id":
                 inspection.id,
+
             "created_at":
                 inspection.created_at,
+
             "status":
                 inspection.status,
+
             "vehicle": {
                 "registration":
                     vehicle.registration,
+
                 "make":
                     vehicle.make,
+
                 "model":
                     vehicle.model,
+
                 "year":
                     vehicle.year,
             },
+
             "image": {
                 "id":
                     damage_image.id,
+
                 "filename":
                     damage_image.filename,
             },
+
             "summary": {
                 "damage_detected":
                     inspection.damage_detected,
+
                 "damage_count":
                     inspection.damage_count,
+
                 "highest_confidence":
                     inspection.highest_confidence,
+
                 "severity":
                     inspection.severity,
+
                 "severity_score":
                     inspection.severity_score,
+
                 "severity_factors":
                     severity_factors,
+
                 "review":
                     review,
+
                 "model_thresholds":
                     model_thresholds,
             },
+
             "detections": [
                 {
                     "id":
                         detection.id,
+
                     "damage_type":
                         detection.damage_type,
+
                     "confidence":
                         detection.confidence,
+
                     "bounding_box": {
                         "x1":
                             detection.x1,
+
                         "y1":
                             detection.y1,
+
                         "x2":
                             detection.x2,
+
                         "y2":
                             detection.y2,
                     },
+
                     "segmentation": (
                         json.loads(
                             detection.segmentation
@@ -1554,11 +1952,14 @@ def get_inspection_report(
                 for detection
                 in inspection.detections
             ],
+
             "model": {
                 "repository":
                     inspection.model_repository,
+
                 "checkpoint":
                     inspection.model_checkpoint,
+
                 "confidence_threshold":
                     inspection.confidence_threshold,
             },
@@ -1567,8 +1968,11 @@ def get_inspection_report(
 
 
 @app.get(
-    "/vehicles/{registration}/inspection-summary",
-    response_model=VehicleInspectionSummary,
+    "/vehicles/{registration}/"
+    "inspection-summary",
+    response_model=(
+        VehicleInspectionSummary
+    ),
 )
 def get_vehicle_inspection_summary(
     registration: str,
@@ -1595,7 +1999,9 @@ def get_vehicle_inspection_summary(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
 
     all_inspections = []
@@ -1607,12 +2013,14 @@ def get_vehicle_inspection_summary(
             damage_image.inspections
         )
 
-    total_damage_detections = sum(
-        len(
-            inspection.detections
+    total_damage_detections = (
+        sum(
+            len(
+                inspection.detections
+            )
+            for inspection
+            in all_inspections
         )
-        for inspection
-        in all_inspections
     )
 
     damage_detected = any(
@@ -1644,43 +2052,55 @@ def get_vehicle_inspection_summary(
     return {
         "registration":
             vehicle.registration,
+
         "vehicle": {
             "registration":
                 vehicle.registration,
+
             "make":
                 vehicle.make,
+
             "model":
                 vehicle.model,
+
             "year":
                 vehicle.year,
         },
+
         "total_images":
             len(
                 vehicle.damage_images
             ),
+
         "total_inspections":
             len(
                 all_inspections
             ),
+
         "damage_detected":
             damage_detected,
+
         "total_damage_detections":
             total_damage_detections,
+
         "latest_severity": (
             latest_inspection.severity
             if latest_inspection
             else None
         ),
+
         "latest_severity_score": (
             latest_inspection.severity_score
             if latest_inspection
             else None
         ),
+
         "latest_inspection_id": (
             latest_inspection.id
             if latest_inspection
             else None
         ),
+
         "latest_inspection_confidence": (
             latest_review.get(
                 "inspection_confidence"
@@ -1688,6 +2108,7 @@ def get_vehicle_inspection_summary(
             if latest_review
             else None
         ),
+
         "latest_manual_review_required": (
             latest_review.get(
                 "manual_review_required"
@@ -1696,6 +2117,11 @@ def get_vehicle_inspection_summary(
             else None
         ),
     }
+
+
+# --------------------------------------------------
+# Dashboard
+# --------------------------------------------------
 
 
 @app.get(
@@ -1714,7 +2140,9 @@ def get_dashboard_summary(
     ),
 ):
     vehicle_query = (
-        db.query(VehicleDB)
+        db.query(
+            VehicleDB
+        )
     )
 
     vehicle_query = (
@@ -1727,7 +2155,9 @@ def get_dashboard_summary(
     )
 
     inspection_query = (
-        db.query(InspectionDB)
+        db.query(
+            InspectionDB
+        )
         .join(
             DamageImageDB,
             InspectionDB.damage_image_id
@@ -1758,11 +2188,15 @@ def get_dashboard_summary(
     )
 
     total_vehicles = (
-        len(vehicles)
+        len(
+            vehicles
+        )
     )
 
     total_inspections = (
-        len(inspections)
+        len(
+            inspections
+        )
     )
 
     damage_detected = sum(
@@ -1776,6 +2210,7 @@ def get_dashboard_summary(
     )
 
     clear_inspections = 0
+
     manual_review_count = 0
 
     for inspection in inspections:
@@ -1805,7 +2240,9 @@ def get_dashboard_summary(
             clear_inspections += 1
 
     recent_query = (
-        db.query(InspectionDB)
+        db.query(
+            InspectionDB
+        )
         .join(
             DamageImageDB,
             InspectionDB.damage_image_id
@@ -1830,35 +2267,48 @@ def get_dashboard_summary(
     recent_inspections = (
         recent_query
         .order_by(
-            InspectionDB.created_at.desc()
+            InspectionDB.created_at
+            .desc()
         )
-        .limit(5)
+        .limit(
+            5
+        )
         .all()
     )
 
     return {
         "total_vehicles":
             total_vehicles,
+
         "total_inspections":
             total_inspections,
+
         "damage_detected":
             damage_detected,
+
         "clear_inspections":
             clear_inspections,
+
         "manual_review_count":
             manual_review_count,
+
         "recent_inspections": [
             {
                 "id":
                     inspection.id,
+
                 "damage_detected":
                     inspection.damage_detected,
+
                 "damage_count":
                     inspection.damage_count,
+
                 "severity":
                     inspection.severity,
+
                 "severity_score":
                     inspection.severity_score,
+
                 "inspection_confidence": (
                     (
                         get_review_metadata(
@@ -1869,6 +2319,7 @@ def get_dashboard_summary(
                         "inspection_confidence"
                     )
                 ),
+
                 "manual_review_required": (
                     (
                         get_review_metadata(
@@ -1879,8 +2330,10 @@ def get_dashboard_summary(
                         "manual_review_required"
                     )
                 ),
+
                 "created_at":
                     inspection.created_at,
+
                 "registration":
                     (
                         inspection
@@ -1888,6 +2341,7 @@ def get_dashboard_summary(
                         .vehicle
                         .registration
                     ),
+
                 "make":
                     (
                         inspection
@@ -1895,6 +2349,7 @@ def get_dashboard_summary(
                         .vehicle
                         .make
                     ),
+
                 "model":
                     (
                         inspection
@@ -1907,6 +2362,11 @@ def get_dashboard_summary(
             in recent_inspections
         ],
     }
+
+
+# --------------------------------------------------
+# Delete operations
+# --------------------------------------------------
 
 
 @app.delete(
@@ -1942,13 +2402,53 @@ def delete_damage_image(
             ),
         )
 
+    require_vehicle_write_permission(
+        db,
+        current_user,
+        damage_image.vehicle,
+    )
+
+    vehicle = (
+        damage_image.vehicle
+    )
+
     file_path = (
         damage_image.file_path
+    )
+
+    damage_image_id = (
+        damage_image.id
+    )
+
+    registration_value = (
+        vehicle.registration
+    )
+
+    organisation_id = (
+        vehicle.organisation_id
+    )
+
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="damage_image.delete",
+        entity_type="damage_image",
+        entity_id=damage_image_id,
+        details={
+            "registration":
+                registration_value,
+            "filename":
+                damage_image.filename,
+        },
     )
 
     db.delete(
         damage_image
     )
+
     db.commit()
 
     if (
@@ -1998,8 +2498,34 @@ def delete_vehicle_and_data(
     if not vehicle:
         raise HTTPException(
             status_code=404,
-            detail="Vehicle not found",
+            detail=(
+                "Vehicle not found"
+            ),
         )
+
+    require_vehicle_write_permission(
+        db,
+        current_user,
+        vehicle,
+    )
+
+    vehicle_id = (
+        vehicle.id
+    )
+
+    organisation_id = (
+        vehicle.organisation_id
+    )
+
+    registration_value = (
+        vehicle.registration
+    )
+
+    image_count = (
+        len(
+            vehicle.damage_images
+        )
+    )
 
     image_paths = [
         image.file_path
@@ -2007,9 +2533,27 @@ def delete_vehicle_and_data(
         in vehicle.damage_images
     ]
 
+    create_audit_log(
+        db,
+        actor=current_user,
+        organisation_id=(
+            organisation_id
+        ),
+        action="vehicle.delete_full",
+        entity_type="vehicle",
+        entity_id=vehicle_id,
+        details={
+            "registration":
+                registration_value,
+            "deleted_image_count":
+                image_count,
+        },
+    )
+
     db.delete(
         vehicle
     )
+
     db.commit()
 
     for file_path in (

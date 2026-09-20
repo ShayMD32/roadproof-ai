@@ -97,6 +97,34 @@ def get_user_membership(
         db.close()
 
 
+def add_workspace_membership(
+    organisation_id,
+    user_id,
+    role,
+):
+    db = TestingSessionLocal()
+
+    try:
+        membership = (
+            OrganisationMembershipDB(
+                organisation_id=(
+                    organisation_id
+                ),
+                user_id=user_id,
+                role=role,
+            )
+        )
+
+        db.add(
+            membership
+        )
+
+        db.commit()
+
+    finally:
+        db.close()
+
+
 def test_registration_creates_personal_workspace(
     client,
 ):
@@ -311,26 +339,11 @@ def test_workspace_member_can_view_shared_vehicle(
         == 200
     )
 
-    db = TestingSessionLocal()
-
-    try:
-        shared_membership = (
-            OrganisationMembershipDB(
-                organisation_id=(
-                    owner_organisation_id
-                ),
-                user_id=member_id,
-                role="member",
-            )
-        )
-
-        db.add(
-            shared_membership
-        )
-        db.commit()
-
-    finally:
-        db.close()
+    add_workspace_membership(
+        owner_organisation_id,
+        member_id,
+        "member",
+    )
 
     workspace_headers = {
         **member_headers,
@@ -1129,7 +1142,7 @@ def test_multiple_workspaces_require_selection(
     client,
 ):
     (
-        user_id,
+        _,
         headers,
     ) = create_account(
         client,
@@ -1306,4 +1319,444 @@ def test_workspace_header_switches_vehicle_context(
     assert (
         second_registrations
         == ["SECOND24"]
+    )
+
+
+# --------------------------------------------------
+# Day 4 workspace write permissions
+# --------------------------------------------------
+
+
+def test_member_cannot_update_shared_vehicle(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account(
+        client,
+        "editowner@example.com",
+        "Edit Owner",
+    )
+
+    (
+        member_id,
+        member_headers,
+    ) = create_account(
+        client,
+        "editmember@example.com",
+        "Edit Member",
+    )
+
+    (
+        _,
+        organisation_id,
+        _,
+    ) = get_user_membership(
+        owner_id
+    )
+
+    create_response = client.post(
+        "/vehicle",
+        headers=owner_headers,
+        json={
+            "registration":
+                "EDIT24CAR",
+            "make":
+                "BMW",
+            "model":
+                "M3",
+            "year":
+                2024,
+        },
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    add_workspace_membership(
+        organisation_id,
+        member_id,
+        "member",
+    )
+
+    member_workspace_headers = {
+        **member_headers,
+        "X-Workspace-ID":
+            str(organisation_id),
+    }
+
+    response = client.put(
+        "/vehicles/EDIT24CAR",
+        headers=member_workspace_headers,
+        json={
+            "registration":
+                "EDIT24CAR",
+            "make":
+                "BMW",
+            "model":
+                "M3 Competition",
+            "year":
+                2025,
+        },
+    )
+
+    assert (
+        response.status_code
+        == 403
+    )
+
+    assert (
+        response.json()["detail"]
+        == (
+            "Workspace owner or admin "
+            "permission is required"
+        )
+    )
+
+    owner_response = client.get(
+        "/vehicles/EDIT24CAR",
+        headers=owner_headers,
+    )
+
+    assert (
+        owner_response.status_code
+        == 200
+    )
+
+    assert (
+        owner_response.json()["model"]
+        == "M3"
+    )
+
+
+def test_member_cannot_delete_shared_vehicle(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account(
+        client,
+        "deleteowner@example.com",
+        "Delete Owner",
+    )
+
+    (
+        member_id,
+        member_headers,
+    ) = create_account(
+        client,
+        "deletemember@example.com",
+        "Delete Member",
+    )
+
+    (
+        _,
+        organisation_id,
+        _,
+    ) = get_user_membership(
+        owner_id
+    )
+
+    create_response = client.post(
+        "/vehicle",
+        headers=owner_headers,
+        json={
+            "registration":
+                "NODELETE24",
+            "make":
+                "Audi",
+            "model":
+                "RS3",
+            "year":
+                2024,
+        },
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    add_workspace_membership(
+        organisation_id,
+        member_id,
+        "member",
+    )
+
+    member_workspace_headers = {
+        **member_headers,
+        "X-Workspace-ID":
+            str(organisation_id),
+    }
+
+    response = client.delete(
+        "/vehicles/NODELETE24",
+        headers=member_workspace_headers,
+    )
+
+    assert (
+        response.status_code
+        == 403
+    )
+
+    assert (
+        response.json()["detail"]
+        == (
+            "Workspace owner or admin "
+            "permission is required"
+        )
+    )
+
+    owner_response = client.get(
+        "/vehicles/NODELETE24",
+        headers=owner_headers,
+    )
+
+    assert (
+        owner_response.status_code
+        == 200
+    )
+
+
+def test_member_cannot_delete_shared_damage_image(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account(
+        client,
+        "imagepermissionowner@example.com",
+        "Image Permission Owner",
+    )
+
+    (
+        member_id,
+        member_headers,
+    ) = create_account(
+        client,
+        "imagepermissionmember@example.com",
+        "Image Permission Member",
+    )
+
+    (
+        _,
+        organisation_id,
+        _,
+    ) = get_user_membership(
+        owner_id
+    )
+
+    create_response = client.post(
+        "/vehicle",
+        headers=owner_headers,
+        json={
+            "registration":
+                "IMGROLE24",
+            "make":
+                "Mercedes",
+            "model":
+                "A35",
+            "year":
+                2024,
+        },
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    upload_response = client.post(
+        (
+            "/vehicles/"
+            "IMGROLE24/"
+            "damage-image"
+        ),
+        headers=owner_headers,
+        files={
+            "image": (
+                "damage.jpg",
+                b"image-data",
+                "image/jpeg",
+            )
+        },
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    add_workspace_membership(
+        organisation_id,
+        member_id,
+        "member",
+    )
+
+    member_workspace_headers = {
+        **member_headers,
+        "X-Workspace-ID":
+            str(organisation_id),
+    }
+
+    response = client.delete(
+        (
+            f"/damage-images/"
+            f"{image_id}"
+        ),
+        headers=member_workspace_headers,
+    )
+
+    assert (
+        response.status_code
+        == 403
+    )
+
+    assert (
+        response.json()["detail"]
+        == (
+            "Workspace owner or admin "
+            "permission is required"
+        )
+    )
+
+    image_response = client.get(
+        (
+            f"/damage-images/"
+            f"{image_id}/content"
+        ),
+        headers=owner_headers,
+    )
+
+    assert (
+        image_response.status_code
+        == 200
+    )
+
+
+def test_workspace_admin_can_update_and_delete_vehicle(
+    client,
+):
+    (
+        owner_id,
+        owner_headers,
+    ) = create_account(
+        client,
+        "writeadminowner@example.com",
+        "Write Admin Owner",
+    )
+
+    (
+        admin_id,
+        admin_headers,
+    ) = create_account(
+        client,
+        "writeadmin@example.com",
+        "Write Admin",
+    )
+
+    (
+        _,
+        organisation_id,
+        _,
+    ) = get_user_membership(
+        owner_id
+    )
+
+    create_response = client.post(
+        "/vehicle",
+        headers=owner_headers,
+        json={
+            "registration":
+                "ADMINWRITE",
+            "make":
+                "BMW",
+            "model":
+                "M4",
+            "year":
+                2024,
+        },
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    add_workspace_membership(
+        organisation_id,
+        admin_id,
+        "admin",
+    )
+
+    admin_workspace_headers = {
+        **admin_headers,
+        "X-Workspace-ID":
+            str(organisation_id),
+    }
+
+    update_response = client.put(
+        "/vehicles/ADMINWRITE",
+        headers=admin_workspace_headers,
+        json={
+            "registration":
+                "ADMINWRITE",
+            "make":
+                "BMW",
+            "model":
+                "M4 Competition",
+            "year":
+                2025,
+        },
+    )
+
+    assert (
+        update_response.status_code
+        == 200
+    )
+
+    assert (
+        update_response.json()[
+            "vehicle"
+        ]["model"]
+        == "M4 Competition"
+    )
+
+    delete_response = client.delete(
+        "/vehicles/ADMINWRITE",
+        headers=admin_workspace_headers,
+    )
+
+    assert (
+        delete_response.status_code
+        == 200
+    )
+
+    assert (
+        delete_response.json()["message"]
+        == (
+            "Vehicle deleted "
+            "successfully!"
+        )
+    )
+
+    owner_get_response = client.get(
+        "/vehicles/ADMINWRITE",
+        headers=owner_headers,
+    )
+
+    assert (
+        owner_get_response.status_code
+        == 404
     )
