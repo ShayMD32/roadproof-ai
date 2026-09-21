@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import {
+  useQuery,
+} from '@tanstack/react-query'
 
 import {
   AlertTriangle,
   CarFront,
+  CircleCheckBig,
   ScanLine,
-  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react'
 
 import {
@@ -14,6 +17,24 @@ import {
 import {
   getDashboardSummary,
 } from '../api/client'
+
+
+function formatDate(
+  value: string,
+) {
+  return new Intl.DateTimeFormat(
+    'en-GB',
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+  ).format(
+    new Date(value),
+  )
+}
 
 
 function Dashboard() {
@@ -43,7 +64,7 @@ function Dashboard() {
         0,
 
       description:
-        'Vehicles registered',
+        'Vehicles in this workspace',
 
       icon:
         CarFront,
@@ -57,38 +78,38 @@ function Dashboard() {
         0,
 
       description:
-        'AI inspections completed',
+        'AI assessments completed',
 
       icon:
         ScanLine,
     },
     {
       title:
-        'Damage Detected',
+        'Confirmed Damage',
 
       value:
         data?.damage_detected ??
         0,
 
       description:
-        'Inspections with damage',
+        'Inspections with accepted damage',
 
       icon:
         AlertTriangle,
     },
     {
       title:
-        'Clear Inspections',
+        'Manual Review',
 
       value:
-        data?.clear_inspections ??
+        data?.manual_review_count ??
         0,
 
       description:
-        'No damage detected',
+        'Inspections needing human review',
 
       icon:
-        ShieldCheck,
+        ShieldAlert,
     },
   ]
 
@@ -131,15 +152,18 @@ function Dashboard() {
               mt-2
               max-w-2xl
               text-sm
+              leading-6
               text-neutral-400
             "
           >
-            Monitor vehicles, AI damage inspections
-            and assessment results from one platform.
+            Monitor vehicles, AI-assisted damage
+            inspections and assessment results
+            from one workspace.
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() =>
             navigate(
               '/app/inspections/new',
@@ -171,6 +195,11 @@ function Dashboard() {
         >
           <p className="text-sm text-red-300">
             Unable to load dashboard data.
+          </p>
+
+          <p className="mt-1 text-xs text-red-300/70">
+            Check that the RoadProof API is running
+            and try again.
           </p>
         </div>
       )}
@@ -212,7 +241,8 @@ function Dashboard() {
                 <div
                   className="
                     flex h-9 w-9
-                    items-center justify-center
+                    items-center
+                    justify-center
                     rounded-xl
                     bg-white/[0.05]
                     text-neutral-300
@@ -254,12 +284,14 @@ function Dashboard() {
 
       <section
         className="
-          mt-6 grid gap-6
+          mt-6
+          grid gap-6
           xl:grid-cols-[1.6fr_1fr]
         "
       >
         <div
           className="
+            overflow-hidden
             rounded-2xl
             border border-white/10
             bg-[#0d0f12]
@@ -286,12 +318,42 @@ function Dashboard() {
                   text-neutral-500
                 "
               >
-                Latest AI vehicle assessments
+                Latest AI-assisted vehicle assessments
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate(
+                  '/app/reports',
+                )
+              }
+              className="
+                text-xs
+                text-neutral-400
+                transition
+                hover:text-white
+              "
+            >
+              View all
+            </button>
           </div>
 
-          {!data?.recent_inspections.length ? (
+          {isLoading ? (
+            <div
+              className="
+                flex min-h-72
+                items-center
+                justify-center
+                px-6
+              "
+            >
+              <p className="text-sm text-neutral-500">
+                Loading inspections…
+              </p>
+            </div>
+          ) : !data?.recent_inspections.length ? (
             <div
               className="
                 flex min-h-72
@@ -303,7 +365,7 @@ function Dashboard() {
               "
             >
               <ScanLine
-                size={22}
+                size={24}
                 className="text-neutral-400"
               />
 
@@ -326,81 +388,164 @@ function Dashboard() {
                   text-neutral-500
                 "
               >
-                Upload a vehicle damage image and
-                run an AI inspection to see results here.
+                Add a vehicle, upload an image and
+                run an AI-assisted inspection to see
+                assessment results here.
               </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(
+                    '/app/inspections/new',
+                  )
+                }
+                className="
+                  mt-5
+                  rounded-lg
+                  border border-white/10
+                  px-4 py-2
+                  text-xs font-medium
+                  text-neutral-300
+                  transition
+                  hover:bg-white/5
+                  hover:text-white
+                "
+              >
+                Start inspection
+              </button>
             </div>
           ) : (
             <div className="divide-y divide-white/5">
               {data.recent_inspections.map(
                 (
                   inspection,
-                ) => (
-                  <button
-                    key={
-                      inspection.id
-                    }
-                    onClick={() =>
-                      navigate(
-                        `/app/reports/${inspection.id}`,
-                      )
-                    }
-                    className="
-                      flex w-full
-                      items-center
-                      justify-between
-                      px-6 py-4
-                      text-left
-                      transition
-                      hover:bg-white/[0.03]
-                    "
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {
-                          inspection.make
-                        }{' '}
-                        {
-                          inspection.model
-                        }
-                      </p>
+                ) => {
+                  let statusLabel =
+                    'No confirmed damage'
 
-                      <p
+                  let StatusIcon =
+                    CircleCheckBig
+
+                  if (
+                    inspection
+                      .manual_review_required
+                  ) {
+                    statusLabel =
+                      'Manual review'
+
+                    StatusIcon =
+                      ShieldAlert
+                  } else if (
+                    inspection
+                      .damage_detected
+                  ) {
+                    statusLabel =
+                      'Damage confirmed'
+
+                    StatusIcon =
+                      AlertTriangle
+                  }
+
+                  return (
+                    <button
+                      key={
+                        inspection.id
+                      }
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          inspection.report_url,
+                        )
+                      }
+                      className="
+                        flex w-full
+                        flex-col gap-4
+                        px-6 py-4
+                        text-left
+                        transition
+                        hover:bg-white/[0.03]
+                        sm:flex-row
+                        sm:items-center
+                        sm:justify-between
+                      "
+                    >
+                      <div>
+                        <p className="text-sm font-medium">
+                          {
+                            inspection.make
+                          }{' '}
+                          {
+                            inspection.model
+                          }
+                        </p>
+
+                        <div
+                          className="
+                            mt-1
+                            flex flex-wrap
+                            items-center
+                            gap-x-3 gap-y-1
+                            text-xs
+                            text-neutral-500
+                          "
+                        >
+                          <span>
+                            {
+                              inspection.registration
+                            }
+                          </span>
+
+                          <span>
+                            Inspection #
+                            {
+                              inspection.id
+                            }
+                          </span>
+
+                          <span>
+                            {
+                              formatDate(
+                                inspection.created_at,
+                              )
+                            }
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
                         className="
-                          mt-1
-                          text-xs
-                          text-neutral-500
+                          flex items-center gap-3
+                          sm:justify-end
                         "
                       >
-                        {
-                          inspection.registration
-                        }
-                      </p>
-                    </div>
+                        <StatusIcon
+                          size={16}
+                          className="text-neutral-400"
+                        />
 
-                    <div className="text-right">
-                      <p className="text-sm capitalize">
-                        {
-                          inspection.severity ??
-                          'None'
-                        }
-                      </p>
+                        <div className="sm:text-right">
+                          <p className="text-sm">
+                            {statusLabel}
+                          </p>
 
-                      <p
-                        className="
-                          mt-1
-                          text-xs
-                          text-neutral-500
-                        "
-                      >
-                        Inspection #
-                        {
-                          inspection.id
-                        }
-                      </p>
-                    </div>
-                  </button>
-                ),
+                          <p
+                            className="
+                              mt-1
+                              text-xs
+                              capitalize
+                              text-neutral-500
+                            "
+                          >
+                            {inspection.severity
+                              ? `${inspection.severity} severity`
+                              : 'Severity not assigned'}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                },
               )}
             </div>
           )}
@@ -425,7 +570,7 @@ function Dashboard() {
               text-neutral-500
             "
           >
-            Damage detection service
+            Vehicle damage assessment service
           </p>
 
           <div
@@ -454,48 +599,40 @@ function Dashboard() {
                   text-neutral-500
                 "
               >
-                Ready for analysis
+                Ready for image analysis
               </p>
             </div>
           </div>
 
           <div className="mt-8 space-y-4">
-            <div>
-              <div
+            <div
+              className="
+                rounded-xl
+                border border-white/10
+                bg-white/[0.02]
+                p-4
+              "
+            >
+              <p className="text-xs text-neutral-500">
+                Scan threshold
+              </p>
+
+              <p className="mt-1 text-lg font-medium">
+                1%
+              </p>
+
+              <p
                 className="
-                  flex
-                  justify-between
+                  mt-1
                   text-xs
+                  leading-5
                   text-neutral-500
                 "
               >
-                <span>
-                  Confidence threshold
-                </span>
-
-                <span>
-                  1% debug
-                </span>
-              </div>
-
-              <div
-                className="
-                  mt-2
-                  h-1.5
-                  overflow-hidden
-                  rounded-full
-                  bg-white/5
-                "
-              >
-                <div
-                  className="
-                    h-full
-                    w-[1%]
-                    min-w-[3px]
-                    bg-white
-                  "
-                />
-              </div>
+                Low-confidence candidates are retained
+                as review signals rather than treated
+                as confirmed damage.
+              </p>
             </div>
 
             <div
@@ -505,12 +642,23 @@ function Dashboard() {
                 pt-4
               "
             >
-              <p
-                className="
-                  text-xs
-                  text-neutral-500
-                "
-              >
+              <p className="text-xs text-neutral-500">
+                Damage acceptance threshold
+              </p>
+
+              <p className="mt-1 text-sm">
+                25%
+              </p>
+            </div>
+
+            <div
+              className="
+                border-t
+                border-white/10
+                pt-4
+              "
+            >
+              <p className="text-xs text-neutral-500">
                 Model
               </p>
 
@@ -526,12 +674,7 @@ function Dashboard() {
                 pt-4
               "
             >
-              <p
-                className="
-                  text-xs
-                  text-neutral-500
-                "
-              >
+              <p className="text-xs text-neutral-500">
                 Assessment mode
               </p>
 
@@ -539,6 +682,29 @@ function Dashboard() {
                 AI-assisted inspection
               </p>
             </div>
+          </div>
+
+          <div
+            className="
+              mt-6
+              rounded-xl
+              border border-amber-500/15
+              bg-amber-500/[0.05]
+              p-4
+            "
+          >
+            <p
+              className="
+                text-xs
+                leading-5
+                text-neutral-400
+              "
+            >
+              Model confidence is not a calibrated
+              probability of vehicle condition.
+              Uncertain or significant results should
+              be reviewed by a person.
+            </p>
           </div>
         </div>
       </section>

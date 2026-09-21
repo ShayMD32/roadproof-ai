@@ -8,6 +8,11 @@ from pydantic import (
 )
 
 
+# ---------------------------------
+# Authentication
+# ---------------------------------
+
+
 class UserRegisterRequest(BaseModel):
     email: EmailStr
 
@@ -140,7 +145,7 @@ class OrganisationInviteRequest(
 
 
 # ---------------------------------
-# Inspection/report schemas
+# Shared report models
 # ---------------------------------
 
 
@@ -158,6 +163,10 @@ class ImageReport(BaseModel):
     id: int
 
     filename: str
+
+    content_url: (
+        str | None
+    ) = None
 
 
 class BoundingBox(BaseModel):
@@ -217,7 +226,9 @@ class SeveritySummary(BaseModel):
         float | None
     ) = None
 
-    severity: str | None = None
+    severity: (
+        str | None
+    ) = None
 
     severity_score: (
         float | None
@@ -243,6 +254,11 @@ class ModelReport(BaseModel):
     checkpoint: str
 
     confidence_threshold: float
+
+
+# ---------------------------------
+# Inspection report
+# ---------------------------------
 
 
 class InspectionReport(BaseModel):
@@ -271,6 +287,11 @@ class InspectionReportResponse(
     report: InspectionReport
 
 
+# ---------------------------------
+# Vehicle inspection summary
+# ---------------------------------
+
+
 class VehicleInspectionSummary(
     BaseModel
 ):
@@ -282,7 +303,11 @@ class VehicleInspectionSummary(
 
     total_inspections: int
 
-    damage_detected: bool
+    damage_detected: (
+        bool | None
+    ) = None
+
+    assessment_status: str
 
     total_damage_detections: int
 
@@ -305,3 +330,74 @@ class VehicleInspectionSummary(
     latest_manual_review_required: (
         bool | None
     ) = None
+
+    latest_inspection_status: (
+        str | None
+    ) = None
+
+    latest_inspection_created_at: (
+        datetime | None
+    ) = None
+
+
+# ---------------------------------
+# Dashboard
+# ---------------------------------
+
+
+class DashboardRecentInspection(
+    BaseModel
+):
+    id: int
+
+    registration: str
+
+    make: str
+
+    model: str
+
+    damage_detected: (
+        bool | None
+    ) = None
+
+    damage_count: (
+        int | None
+    ) = None
+
+    severity: (
+        str | None
+    ) = None
+
+    severity_score: (
+        float | None
+    ) = None
+
+    inspection_confidence: (
+        str | None
+    ) = None
+
+    manual_review_required: (
+        bool | None
+    ) = None
+
+    created_at: datetime
+
+    report_url: str
+
+
+class DashboardSummaryResponse(
+    BaseModel
+):
+    total_vehicles: int
+
+    total_inspections: int
+
+    damage_detected: int
+
+    clear_inspections: int
+
+    manual_review_count: int
+
+    recent_inspections: list[
+        DashboardRecentInspection
+    ]

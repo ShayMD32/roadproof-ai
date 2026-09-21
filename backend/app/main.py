@@ -38,6 +38,7 @@ from app.routers.organisations import (
     router as organisations_router,
 )
 from app.schemas import (
+    DashboardSummaryResponse,
     InspectionReportResponse,
     TokenResponse,
     UserLoginRequest,
@@ -1888,6 +1889,11 @@ def get_inspection_report(
 
                 "filename":
                     damage_image.filename,
+
+                "content_url": (
+                    f"/damage-images/"
+                    f"{damage_image.id}/content"
+                ),
             },
 
             "summary": {
@@ -2023,12 +2029,49 @@ def get_vehicle_inspection_summary(
         )
     )
 
-    damage_detected = any(
-        inspection.damage_detected
-        is True
-        for inspection
-        in all_inspections
-    )
+    if not all_inspections:
+        damage_detected = None
+
+        assessment_status = (
+            "not_inspected"
+        )
+
+    else:
+        damage_detected = any(
+            inspection.damage_detected
+            is True
+            for inspection
+            in all_inspections
+        )
+
+        manual_review_required = any(
+            (
+                get_review_metadata(
+                    inspection
+                )
+                or {}
+            ).get(
+                "manual_review_required",
+                False,
+            )
+            for inspection
+            in all_inspections
+        )
+
+        if manual_review_required:
+            assessment_status = (
+                "manual_review_required"
+            )
+
+        elif damage_detected:
+            assessment_status = (
+                "damage_confirmed"
+            )
+
+        else:
+            assessment_status = (
+                "no_confirmed_damage"
+            )
 
     latest_inspection = None
 
@@ -2080,6 +2123,9 @@ def get_vehicle_inspection_summary(
         "damage_detected":
             damage_detected,
 
+        "assessment_status":
+            assessment_status,
+
         "total_damage_detections":
             total_damage_detections,
 
@@ -2116,6 +2162,18 @@ def get_vehicle_inspection_summary(
             if latest_review
             else None
         ),
+
+        "latest_inspection_status": (
+            latest_inspection.status
+            if latest_inspection
+            else None
+        ),
+
+        "latest_inspection_created_at": (
+            latest_inspection.created_at
+            if latest_inspection
+            else None
+        ),
     }
 
 
@@ -2125,7 +2183,8 @@ def get_vehicle_inspection_summary(
 
 
 @app.get(
-    "/dashboard/summary"
+    "/dashboard/summary",
+    response_model=DashboardSummaryResponse,
 )
 def get_dashboard_summary(
     db: Session = Depends(
@@ -2333,6 +2392,11 @@ def get_dashboard_summary(
 
                 "created_at":
                     inspection.created_at,
+
+                "report_url": (
+                    f"/app/reports/"
+                    f"{inspection.id}"
+                ),
 
                 "registration":
                     (

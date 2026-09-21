@@ -5,10 +5,12 @@ import {
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarClock,
   CarFront,
   CheckCircle2,
   CircleAlert,
   ScanLine,
+  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react'
 
@@ -20,6 +22,24 @@ import {
 import {
   getInspectionReport,
 } from '../api/client'
+
+
+function formatDate(
+  value: string,
+) {
+  return new Intl.DateTimeFormat(
+    'en-GB',
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+  ).format(
+    new Date(value),
+  )
+}
 
 
 function InspectionReport() {
@@ -49,23 +69,35 @@ function InspectionReport() {
         numericInspectionId,
       ),
 
-    enabled: Number.isFinite(
-      numericInspectionId,
-    ),
+    enabled:
+      Number.isFinite(
+        numericInspectionId,
+      ) &&
+      numericInspectionId > 0,
   })
+
+
+  if (
+    !Number.isFinite(
+      numericInspectionId,
+    ) ||
+    numericInspectionId <= 0
+  ) {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <p className="text-sm text-red-300">
+          Invalid inspection ID.
+        </p>
+      </div>
+    )
+  }
 
 
   if (isLoading) {
     return (
       <div className="mx-auto max-w-6xl">
-        <p
-          className="
-            text-sm
-            text-neutral-400
-          "
-        >
-          Loading inspection
-          report...
+        <p className="text-sm text-neutral-400">
+          Loading inspection report...
         </p>
       </div>
     )
@@ -78,16 +110,42 @@ function InspectionReport() {
   ) {
     return (
       <div className="mx-auto max-w-6xl">
-        <p
+        <button
+          type="button"
+          onClick={() =>
+            navigate(-1)
+          }
           className="
+            flex
+            items-center
+            gap-2
             text-sm
-            text-red-300
+            text-neutral-400
+            transition
+            hover:text-white
           "
         >
-          {error instanceof Error
-            ? error.message
-            : 'Unable to load report'}
-        </p>
+          <ArrowLeft size={16} />
+
+          Back
+        </button>
+
+        <div
+          className="
+            mt-6
+            rounded-2xl
+            border
+            border-red-500/20
+            bg-red-500/10
+            p-5
+          "
+        >
+          <p className="text-sm text-red-300">
+            {error instanceof Error
+              ? error.message
+              : 'Unable to load report'}
+          </p>
+        </div>
       </div>
     )
   }
@@ -109,17 +167,55 @@ function InspectionReport() {
       ?.manual_review_required ??
     false
 
-  const damageLabel =
-    report.summary.damage_detected
-      ? 'Detected'
-      : requiresReview
-        ? 'Not confirmed'
-        : 'None'
+
+  let resultLabel =
+    'No confirmed damage'
+
+  let resultDescription =
+    (
+      'No accepted damage detections ' +
+      'were recorded for this inspection.'
+    )
+
+  let ResultIcon =
+    CheckCircle2
+
+
+  if (requiresReview) {
+    resultLabel =
+      'Manual review required'
+
+    resultDescription =
+      (
+        'The AI found uncertain or weak ' +
+        'signals that should be checked ' +
+        'by a person.'
+      )
+
+    ResultIcon =
+      ShieldAlert
+  } else if (
+    report.summary
+      .damage_detected
+  ) {
+    resultLabel =
+      'Damage confirmed'
+
+    resultDescription =
+      (
+        'One or more detections met the ' +
+        'damage acceptance threshold.'
+      )
+
+    ResultIcon =
+      AlertTriangle
+  }
 
 
   return (
     <div className="mx-auto max-w-6xl">
       <button
+        type="button"
         onClick={() =>
           navigate(-1)
         }
@@ -134,6 +230,7 @@ function InspectionReport() {
         "
       >
         <ArrowLeft size={16} />
+
         Back
       </button>
 
@@ -170,12 +267,8 @@ function InspectionReport() {
                 md:text-4xl
               "
             >
-              {
-                report.vehicle.make
-              }{' '}
-              {
-                report.vehicle.model
-              }
+              {report.vehicle.make}{' '}
+              {report.vehicle.model}
             </h1>
 
             <p
@@ -185,10 +278,8 @@ function InspectionReport() {
                 text-neutral-400
               "
             >
-              {
-                report.vehicle.year
-              }{' '}
-              ·{' '}
+              {report.vehicle.year}
+              {' · '}
               {
                 report.vehicle
                   .registration
@@ -198,18 +289,43 @@ function InspectionReport() {
 
           <div
             className="
-              rounded-full
-              border
-              border-white/10
-              bg-white/[0.04]
-              px-4
-              py-2
-              text-xs
-              text-neutral-300
+              flex
+              flex-wrap
+              items-center
+              gap-2
             "
           >
-            Inspection #
-            {report.inspection_id}
+            <div
+              className="
+                rounded-full
+                border
+                border-white/10
+                bg-white/[0.04]
+                px-4
+                py-2
+                text-xs
+                text-neutral-300
+              "
+            >
+              Inspection #
+              {report.inspection_id}
+            </div>
+
+            <div
+              className="
+                rounded-full
+                border
+                border-white/10
+                bg-white/[0.04]
+                px-4
+                py-2
+                text-xs
+                capitalize
+                text-neutral-300
+              "
+            >
+              {report.status}
+            </div>
           </div>
         </div>
       </div>
@@ -217,6 +333,88 @@ function InspectionReport() {
       <section
         className="
           mt-8
+          rounded-2xl
+          border
+          border-white/10
+          bg-[#0d0f12]
+          p-6
+        "
+      >
+        <div
+          className="
+            flex
+            flex-col
+            gap-5
+            sm:flex-row
+            sm:items-center
+            sm:justify-between
+          "
+        >
+          <div
+            className="
+              flex
+              items-start
+              gap-4
+            "
+          >
+            <div
+              className="
+                flex
+                h-11
+                w-11
+                shrink-0
+                items-center
+                justify-center
+                rounded-xl
+                bg-white/[0.05]
+              "
+            >
+              <ResultIcon
+                size={20}
+                className="text-neutral-300"
+              />
+            </div>
+
+            <div>
+              <p className="text-lg font-semibold">
+                {resultLabel}
+              </p>
+
+              <p
+                className="
+                  mt-1
+                  max-w-2xl
+                  text-xs
+                  leading-5
+                  text-neutral-500
+                "
+              >
+                {resultDescription}
+              </p>
+            </div>
+          </div>
+
+          <div
+            className="
+              flex
+              items-center
+              gap-2
+              text-xs
+              text-neutral-500
+            "
+          >
+            <CalendarClock size={15} />
+
+            {formatDate(
+              report.created_at,
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="
+          mt-6
           grid
           gap-4
           sm:grid-cols-2
@@ -224,8 +422,8 @@ function InspectionReport() {
         "
       >
         <ReportStat
-          label="Damage"
-          value={damageLabel}
+          label="Assessment"
+          value={resultLabel}
         />
 
         <ReportStat
@@ -233,12 +431,12 @@ function InspectionReport() {
           value={
             report.summary
               .severity ??
-            'None'
+            'Not assigned'
           }
         />
 
         <ReportStat
-          label="Detections"
+          label="Accepted detections"
           value={String(
             report.summary
               .damage_count,
@@ -246,7 +444,7 @@ function InspectionReport() {
         />
 
         <ReportStat
-          label="Model confidence"
+          label="Highest detection confidence"
           value={
             confidence !== null
               ? `${Math.round(
@@ -332,14 +530,8 @@ function InspectionReport() {
                 "
               >
                 {requiresReview
-                  ? (
-                    'Manual review ' +
-                    'required'
-                  )
-                  : (
-                    'Automated review ' +
-                    'complete'
-                  )}
+                  ? 'Manual review required'
+                  : 'Automated review complete'}
               </p>
 
               <p
@@ -381,10 +573,7 @@ function InspectionReport() {
                 />
 
                 <ReviewMetric
-                  label={
-                    'Highest candidate ' +
-                    'confidence'
-                  }
+                  label="Highest candidate confidence"
                   value={
                     review
                       .highest_candidate_confidence !==
@@ -449,9 +638,7 @@ function InspectionReport() {
                             </span>
 
                             <span>
-                              {
-                                reason
-                              }
+                              {reason}
                             </span>
                           </li>
                         ),
@@ -546,9 +733,7 @@ function InspectionReport() {
               bg-white/[0.05]
             "
           >
-            <CarFront
-              size={18}
-            />
+            <CarFront size={18} />
           </div>
 
           <div>
@@ -639,9 +824,7 @@ function InspectionReport() {
               bg-white/[0.05]
             "
           >
-            <ScanLine
-              size={18}
-            />
+            <ScanLine size={18} />
           </div>
 
           <div>
@@ -703,8 +886,7 @@ function InspectionReport() {
                 text-sm
               "
             >
-              No confirmed damage
-              detections
+              No confirmed damage detections
             </p>
 
             <p
@@ -845,16 +1027,14 @@ function InspectionReport() {
                 text-neutral-400
               "
             >
-              RoadProof uses AI to
-              assist damage assessment.
-              Model confidence is not a
-              calibrated probability of
-              vehicle condition. Results
-              should not replace a
-              professional inspection
-              where uncertainty or
-              significant damage is
-              suspected.
+              RoadProof uses AI to assist
+              damage assessment. Model
+              confidence is not a calibrated
+              probability of vehicle condition.
+              Results should not replace a
+              professional inspection where
+              uncertainty or significant damage
+              is suspected.
             </p>
           </div>
         </div>

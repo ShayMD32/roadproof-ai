@@ -46,8 +46,7 @@ export type Vehicle = {
 export type DamageImage = {
   id: number
   filename: string
-  file_path: string
-  vehicle_id: number
+  content_url: string
 }
 
 
@@ -62,8 +61,20 @@ export type VehicleInspectionSummary = {
   }
 
   total_images: number
+
   total_inspections: number
-  damage_detected: boolean
+
+  damage_detected:
+    | boolean
+    | null
+
+  assessment_status:
+    | 'not_inspected'
+    | 'manual_review_required'
+    | 'damage_confirmed'
+    | 'no_confirmed_damage'
+    | string
+
   total_damage_detections: number
 
   latest_severity:
@@ -84,6 +95,14 @@ export type VehicleInspectionSummary = {
 
   latest_manual_review_required:
     | boolean
+    | null
+
+  latest_inspection_status:
+    | string
+    | null
+
+  latest_inspection_created_at:
+    | string
     | null
 }
 
@@ -219,6 +238,9 @@ export type InspectionReport = {
   image: {
     id: number
     filename: string
+    content_url:
+      | string
+      | null
   }
 
   summary: {
@@ -265,9 +287,13 @@ export type InspectionReport = {
 export type DashboardInspection = {
   id: number
 
-  damage_detected: boolean
+  damage_detected:
+    | boolean
+    | null
 
-  damage_count: number
+  damage_count:
+    | number
+    | null
 
   severity:
     | string
@@ -292,6 +318,8 @@ export type DashboardInspection = {
   make: string
 
   model: string
+
+  report_url: string
 }
 
 

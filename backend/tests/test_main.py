@@ -2376,3 +2376,511 @@ def test_member_remove_creates_audit_log(
         details["role"]
         == "member"
     )
+
+
+def test_empty_dashboard_summary(
+    authenticated_client,
+):
+    response = authenticated_client.get(
+        "/dashboard/summary"
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    data = response.json()
+
+    assert (
+        data["total_vehicles"]
+        == 0
+    )
+
+    assert (
+        data["total_inspections"]
+        == 0
+    )
+
+    assert (
+        data["damage_detected"]
+        == 0
+    )
+
+    assert (
+        data["clear_inspections"]
+        == 0
+    )
+
+    assert (
+        data["manual_review_count"]
+        == 0
+    )
+
+    assert (
+        data["recent_inspections"]
+        == []
+    )
+
+
+def test_dashboard_recent_inspection_has_report_url(
+    authenticated_client,
+    monkeypatch,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "DASH12CAR",
+            "make":
+                "BMW",
+            "model":
+                "M3",
+            "year":
+                2024,
+        },
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "dash12car/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "damage.jpg",
+                    b"fake-image-data",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    def fake_analyse_damage_image(
+        image_id,
+        db,
+    ):
+        return create_mock_inspection(
+            image_id=image_id,
+            db=db,
+        )
+
+    monkeypatch.setattr(
+        (
+            "app.main."
+            "analyse_damage_image"
+        ),
+        fake_analyse_damage_image,
+    )
+
+    analysis_response = (
+        authenticated_client.post(
+            (
+                f"/damage-images/"
+                f"{image_id}/analyse"
+            )
+        )
+    )
+
+    inspection_id = (
+        analysis_response.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    response = authenticated_client.get(
+        "/dashboard/summary"
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    recent = (
+        response.json()[
+            "recent_inspections"
+        ]
+    )
+
+    assert len(recent) == 1
+
+    assert (
+        recent[0]["id"]
+        == inspection_id
+    )
+
+    assert (
+        recent[0][
+            "registration"
+        ]
+        == "DASH12CAR"
+    )
+
+    assert (
+        recent[0][
+            "report_url"
+        ]
+        == (
+            f"/app/reports/"
+            f"{inspection_id}"
+        )
+    )
+
+
+def test_dashboard_recent_inspections_are_newest_first(
+    authenticated_client,
+    monkeypatch,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "ORDER12",
+            "make":
+                "Audi",
+            "model":
+                "RS3",
+            "year":
+                2024,
+        },
+    )
+
+    def fake_analyse_damage_image(
+        image_id,
+        db,
+    ):
+        return create_mock_inspection(
+            image_id=image_id,
+            db=db,
+        )
+
+    monkeypatch.setattr(
+        (
+            "app.main."
+            "analyse_damage_image"
+        ),
+        fake_analyse_damage_image,
+    )
+
+    first_upload = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "order12/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "first.jpg",
+                    b"first-image",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    first_image_id = (
+        first_upload.json()[
+            "image"
+        ]["id"]
+    )
+
+    first_analysis = (
+        authenticated_client.post(
+            (
+                f"/damage-images/"
+                f"{first_image_id}/analyse"
+            )
+        )
+    )
+
+    first_inspection_id = (
+        first_analysis.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    second_upload = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "order12/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "second.jpg",
+                    b"second-image",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    second_image_id = (
+        second_upload.json()[
+            "image"
+        ]["id"]
+    )
+
+    second_analysis = (
+        authenticated_client.post(
+            (
+                f"/damage-images/"
+                f"{second_image_id}/analyse"
+            )
+        )
+    )
+
+    second_inspection_id = (
+        second_analysis.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    response = authenticated_client.get(
+        "/dashboard/summary"
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    recent = (
+        response.json()[
+            "recent_inspections"
+        ]
+    )
+
+    assert (
+        recent[0]["id"]
+        == second_inspection_id
+    )
+
+    assert (
+        recent[1]["id"]
+        == first_inspection_id
+    )
+
+
+def test_vehicle_summary_includes_latest_inspection_metadata(
+    authenticated_client,
+    monkeypatch,
+):
+    authenticated_client.post(
+        "/vehicle",
+        json={
+            "registration":
+                "META12CAR",
+            "make":
+                "Mercedes",
+            "model":
+                "A35",
+            "year":
+                2024,
+        },
+    )
+
+    upload_response = (
+        authenticated_client.post(
+            (
+                "/vehicles/"
+                "meta12car/"
+                "damage-image"
+            ),
+            files={
+                "image": (
+                    "damage.jpg",
+                    b"fake-image-data",
+                    "image/jpeg",
+                )
+            },
+        )
+    )
+
+    assert (
+        upload_response.status_code
+        == 200
+    )
+
+    image_id = (
+        upload_response.json()[
+            "image"
+        ]["id"]
+    )
+
+    def fake_analyse_damage_image(
+        image_id,
+        db,
+    ):
+        return create_mock_inspection(
+            image_id=image_id,
+            db=db,
+        )
+
+    monkeypatch.setattr(
+        (
+            "app.main."
+            "analyse_damage_image"
+        ),
+        fake_analyse_damage_image,
+    )
+
+    analysis_response = (
+        authenticated_client.post(
+            (
+                f"/damage-images/"
+                f"{image_id}/analyse"
+            )
+        )
+    )
+
+    assert (
+        analysis_response.status_code
+        == 200
+    )
+
+    inspection_id = (
+        analysis_response.json()[
+            "inspection"
+        ]["id"]
+    )
+
+    response = (
+        authenticated_client.get(
+            (
+                "/vehicles/"
+                "meta12car/"
+                "inspection-summary"
+            )
+        )
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    summary = response.json()
+
+    assert (
+        summary[
+            "latest_inspection_id"
+        ]
+        == inspection_id
+    )
+
+    assert (
+        summary[
+            "latest_inspection_status"
+        ]
+        == "completed"
+    )
+
+    assert (
+        summary[
+            "latest_inspection_created_at"
+        ]
+        is not None
+    )
+
+
+def test_uninspected_vehicle_is_not_marked_clear(
+    authenticated_client,
+):
+    create_response = (
+        authenticated_client.post(
+            "/vehicle",
+            json={
+                "registration":
+                    "NEW12CAR",
+                "make":
+                    "BMW",
+                "model":
+                    "M2",
+                "year":
+                    2024,
+            },
+        )
+    )
+
+    assert (
+        create_response.status_code
+        == 200
+    )
+
+    response = (
+        authenticated_client.get(
+            (
+                "/vehicles/"
+                "new12car/"
+                "inspection-summary"
+            )
+        )
+    )
+
+    assert (
+        response.status_code
+        == 200
+    )
+
+    summary = response.json()
+
+    assert (
+        summary[
+            "total_inspections"
+        ]
+        == 0
+    )
+
+    assert (
+        summary[
+            "damage_detected"
+        ]
+        is None
+    )
+
+    assert (
+        summary[
+            "assessment_status"
+        ]
+        == "not_inspected"
+    )
+
+    assert (
+        summary[
+            "total_damage_detections"
+        ]
+        == 0
+    )
+
+    assert (
+        summary[
+            "latest_inspection_id"
+        ]
+        is None
+    )
+
+    assert (
+        summary[
+            "latest_inspection_status"
+        ]
+        is None
+    )
+
+    assert (
+        summary[
+            "latest_inspection_created_at"
+        ]
+        is None
+    )
