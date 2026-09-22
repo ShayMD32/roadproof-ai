@@ -8,6 +8,7 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Query,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +41,7 @@ from app.routers.organisations import (
 from app.schemas import (
     DashboardSummaryResponse,
     InspectionReportResponse,
+    InspectionReportsPageResponse,
     TokenResponse,
     UserLoginRequest,
     UserRegisterRequest,
@@ -1792,6 +1794,175 @@ def get_image_inspections(
             for inspection
             in inspections
         ],
+    }
+
+
+@app.get(
+    "/inspections/reports",
+    response_model=(
+        InspectionReportsPageResponse
+    ),
+)
+def get_inspection_reports(
+    page: int = Query(
+        default=1,
+        ge=1,
+    ),
+    page_size: int = Query(
+        default=10,
+        ge=1,
+        le=50,
+    ),
+    db: Session = Depends(
+        get_db
+    ),
+    current_user: UserDB = Depends(
+        get_current_user
+    ),
+    workspace_id: int | None = Header(
+        default=None,
+        alias="X-Workspace-ID",
+    ),
+):
+    query = (
+        db.query(
+            InspectionDB
+        )
+        .join(
+            DamageImageDB,
+            InspectionDB.damage_image_id
+            == DamageImageDB.id,
+        )
+        .join(
+            VehicleDB,
+            DamageImageDB.vehicle_id
+            == VehicleDB.id,
+        )
+    )
+
+    query = (
+        apply_vehicle_access_filter(
+            query,
+            db,
+            current_user,
+            workspace_id,
+        )
+    )
+
+    total = (
+        query.count()
+    )
+
+    offset = (
+        (page - 1)
+        * page_size
+    )
+
+    inspections = (
+        query
+        .order_by(
+            InspectionDB.created_at
+            .desc(),
+            InspectionDB.id
+            .desc(),
+        )
+        .offset(
+            offset
+        )
+        .limit(
+            page_size
+        )
+        .all()
+    )
+
+    total_pages = (
+        (
+            total
+            + page_size
+            - 1
+        )
+        // page_size
+        if total > 0
+        else 0
+    )
+
+    items = []
+
+    for inspection in (
+        inspections
+    ):
+        review = (
+            get_review_metadata(
+                inspection
+            )
+            or {}
+        )
+
+        vehicle = (
+            inspection
+            .damage_image
+            .vehicle
+        )
+
+        items.append({
+            "id":
+                inspection.id,
+
+            "registration":
+                vehicle.registration,
+
+            "make":
+                vehicle.make,
+
+            "model":
+                vehicle.model,
+
+            "damage_detected":
+                inspection.damage_detected,
+
+            "damage_count":
+                inspection.damage_count,
+
+            "severity":
+                inspection.severity,
+
+            "severity_score":
+                inspection.severity_score,
+
+            "inspection_confidence":
+                review.get(
+                    "inspection_confidence"
+                ),
+
+            "manual_review_required":
+                review.get(
+                    "manual_review_required"
+                ),
+
+            "created_at":
+                inspection.created_at,
+
+            "report_url": (
+                f"/app/reports/"
+                f"{inspection.id}"
+            ),
+        })
+
+    return {
+        "items":
+            items,
+
+        "total":
+            total,
+
+        "page":
+            page,
+
+        "page_size":
+            page_size,
+
+        "total_pages":
+            total_pages,
     }
 
 

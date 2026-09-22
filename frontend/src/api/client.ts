@@ -4,6 +4,9 @@ const API_BASE_URL =
 const TOKEN_KEY =
   'roadproof_access_token'
 
+const WORKSPACE_KEY =
+  'roadproof_workspace_id'
+
 
 export type AuthUser = {
   id: number
@@ -31,6 +34,16 @@ export type LoginResponse = {
   access_token: string
   token_type: string
   user: AuthUser
+}
+
+
+export type OrganisationSummary = {
+  id: number
+  name: string
+  role: string
+  member_count: number
+  vehicle_count: number
+  created_at: string
 }
 
 
@@ -238,6 +251,7 @@ export type InspectionReport = {
   image: {
     id: number
     filename: string
+
     content_url:
       | string
       | null
@@ -339,6 +353,106 @@ export type DashboardSummary = {
 }
 
 
+export type InspectionReportListItem = {
+  id: number
+
+  registration: string
+
+  make: string
+
+  model: string
+
+  damage_detected:
+    | boolean
+    | null
+
+  damage_count:
+    | number
+    | null
+
+  severity:
+    | string
+    | null
+
+  severity_score:
+    | number
+    | null
+
+  inspection_confidence:
+    | string
+    | null
+
+  manual_review_required:
+    | boolean
+    | null
+
+  created_at: string
+
+  report_url: string
+}
+
+
+export type InspectionReportsPage = {
+  items:
+    InspectionReportListItem[]
+
+  total: number
+
+  page: number
+
+  page_size: number
+
+  total_pages: number
+}
+
+
+// --------------------------------------------------
+// Display helpers
+// --------------------------------------------------
+
+
+export function hasAssignedSeverity(
+  severity:
+    | string
+    | null
+    | undefined,
+): boolean {
+  if (!severity) {
+    return false
+  }
+
+  const normalised =
+    severity
+      .trim()
+      .toLowerCase()
+
+  return (
+    normalised !== 'none' &&
+    normalised !== 'null' &&
+    normalised !== 'n/a' &&
+    normalised !== 'na'
+  )
+}
+
+
+export function formatSeverity(
+  severity:
+    | string
+    | null
+    | undefined,
+): string {
+  if (
+    !hasAssignedSeverity(
+      severity,
+    )
+  ) {
+    return 'Not assigned'
+  }
+
+  return severity!
+}
+
+
 // --------------------------------------------------
 // Token helpers
 // --------------------------------------------------
@@ -379,6 +493,68 @@ export function isAuthenticated():
 
 
 // --------------------------------------------------
+// Workspace helpers
+// --------------------------------------------------
+
+
+export function getSelectedWorkspaceId():
+  | number
+  | null {
+  const stored =
+    localStorage.getItem(
+      WORKSPACE_KEY,
+    )
+
+  if (!stored) {
+    return null
+  }
+
+  const value =
+    Number(stored)
+
+  if (
+    !Number.isInteger(
+      value,
+    ) ||
+    value <= 0
+  ) {
+    localStorage.removeItem(
+      WORKSPACE_KEY,
+    )
+
+    return null
+  }
+
+  return value
+}
+
+
+export function saveSelectedWorkspaceId(
+  workspaceId: number,
+) {
+  localStorage.setItem(
+    WORKSPACE_KEY,
+    String(
+      workspaceId,
+    ),
+  )
+}
+
+
+export function clearSelectedWorkspaceId() {
+  localStorage.removeItem(
+    WORKSPACE_KEY,
+  )
+}
+
+
+function clearSession() {
+  clearAccessToken()
+  clearSelectedWorkspaceId()
+}
+
+
+// --------------------------------------------------
 // Shared authenticated fetch
 // --------------------------------------------------
 
@@ -390,6 +566,9 @@ async function authenticatedFetch(
   const token =
     getAccessToken()
 
+  const workspaceId =
+    getSelectedWorkspaceId()
+
   const headers =
     new Headers(
       init.headers,
@@ -399,6 +578,20 @@ async function authenticatedFetch(
     headers.set(
       'Authorization',
       `Bearer ${token}`,
+    )
+  }
+
+  if (
+    workspaceId &&
+    !headers.has(
+      'X-Workspace-ID',
+    )
+  ) {
+    headers.set(
+      'X-Workspace-ID',
+      String(
+        workspaceId,
+      ),
     )
   }
 
@@ -414,7 +607,7 @@ async function authenticatedFetch(
   if (
     response.status === 401
   ) {
-    clearAccessToken()
+    clearSession()
   }
 
   return response
@@ -440,6 +633,77 @@ async function getErrorMessage(
   } catch {
     return fallback
   }
+}
+
+
+// --------------------------------------------------
+// Protected image helpers
+// --------------------------------------------------
+
+
+function resolveApiUrl(
+  path: string,
+): string {
+  if (
+    path.startsWith(
+      'http://',
+    ) ||
+    path.startsWith(
+      'https://',
+    )
+  ) {
+    return path
+  }
+
+  return `${API_BASE_URL}${
+    path.startsWith('/')
+      ? path
+      : `/${path}`
+  }`
+}
+
+
+export async function getProtectedImageUrl(
+  contentUrl: string,
+): Promise<string> {
+  const response =
+    await authenticatedFetch(
+      resolveApiUrl(
+        contentUrl,
+      ),
+    )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Failed to load protected image',
+      ),
+    )
+  }
+
+  const blob =
+    await response.blob()
+
+  return URL.createObjectURL(
+    blob,
+  )
+}
+
+
+export function revokeProtectedImageUrl(
+  objectUrl:
+    | string
+    | null
+    | undefined,
+) {
+  if (!objectUrl) {
+    return
+  }
+
+  URL.revokeObjectURL(
+    objectUrl,
+  )
 }
 
 
@@ -484,6 +748,8 @@ export async function registerUser(
 export async function loginUser(
   input: LoginInput,
 ): Promise<LoginResponse> {
+  clearSelectedWorkspaceId()
+
   const response =
     await fetch(
       `${API_BASE_URL}/auth/login`,
@@ -542,7 +808,63 @@ export async function getCurrentUser(
 
 
 export function logoutUser() {
-  clearAccessToken()
+  clearSession()
+}
+
+
+// --------------------------------------------------
+// Workspaces
+// --------------------------------------------------
+
+
+export async function getOrganisations(
+): Promise<OrganisationSummary[]> {
+  const response =
+    await authenticatedFetch(
+      `${API_BASE_URL}/organisations`,
+    )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Failed to load workspaces',
+      ),
+    )
+  }
+
+  const organisations:
+    OrganisationSummary[] =
+    await response.json()
+
+  const selectedWorkspaceId =
+    getSelectedWorkspaceId()
+
+  const selectedStillExists =
+    organisations.some(
+      (
+        organisation,
+      ) =>
+        organisation.id ===
+        selectedWorkspaceId,
+    )
+
+  if (
+    organisations.length > 0 &&
+    !selectedStillExists
+  ) {
+    saveSelectedWorkspaceId(
+      organisations[0].id,
+    )
+  }
+
+  if (
+    organisations.length === 0
+  ) {
+    clearSelectedWorkspaceId()
+  }
+
+  return organisations
 }
 
 
@@ -842,6 +1164,43 @@ export async function getInspectionReport(
     await response.json()
 
   return data.report
+}
+
+
+export async function getInspectionReports(
+  page = 1,
+  pageSize = 5,
+): Promise<InspectionReportsPage> {
+  const params =
+    new URLSearchParams({
+      page:
+        String(page),
+
+      page_size:
+        String(
+          pageSize,
+        ),
+    })
+
+  const response =
+    await authenticatedFetch(
+      (
+        `${API_BASE_URL}` +
+        `/inspections/reports?` +
+        params.toString()
+      ),
+    )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Failed to load inspection reports',
+      ),
+    )
+  }
+
+  return response.json()
 }
 
 

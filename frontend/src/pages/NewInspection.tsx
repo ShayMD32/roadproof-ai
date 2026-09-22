@@ -5,8 +5,13 @@ import {
   useState,
 } from 'react'
 
-import { useMutation } from '@tanstack/react-query'
-import { useNavigate } from 'react-router'
+import {
+  useMutation,
+} from '@tanstack/react-query'
+
+import {
+  useNavigate,
+} from 'react-router'
 
 import {
   AlertTriangle,
@@ -25,6 +30,7 @@ import {
 import {
   analyseDamageImage,
   createVehicle,
+  formatSeverity,
   getVehicle,
   uploadDamageImage,
   type Vehicle,
@@ -32,213 +38,345 @@ import {
 
 
 function NewInspection() {
-  const navigate = useNavigate()
+  const navigate =
+    useNavigate()
 
-  const fileInputRef = useRef<HTMLInputElement | null>(
+  const fileInputRef =
+    useRef<HTMLInputElement | null>(
+      null,
+    )
+
+  const [
+    registration,
+    setRegistration,
+  ] = useState('')
+
+  const [
+    selectedFile,
+    setSelectedFile,
+  ] = useState<File | null>(
     null,
   )
 
-  const [registration, setRegistration] = useState('')
-  const [selectedFile, setSelectedFile] =
-    useState<File | null>(null)
+  const [
+    vehicleExists,
+    setVehicleExists,
+  ] = useState<boolean | null>(
+    null,
+  )
 
-  const [vehicleExists, setVehicleExists] =
-    useState<boolean | null>(null)
+  const [
+    existingVehicle,
+    setExistingVehicle,
+  ] = useState<Vehicle | null>(
+    null,
+  )
 
-  const [existingVehicle, setExistingVehicle] =
-    useState<Vehicle | null>(null)
+  const [
+    make,
+    setMake,
+  ] = useState('')
 
-  const [make, setMake] = useState('')
-  const [model, setModel] = useState('')
-  const [year, setYear] = useState('')
+  const [
+    model,
+    setModel,
+  ] = useState('')
 
-  const [lastRegistration, setLastRegistration] =
-    useState('')
+  const [
+    year,
+    setYear,
+  ] = useState('')
+
+  const [
+    lastRegistration,
+    setLastRegistration,
+  ] = useState('')
 
 
-  const previewUrl = useMemo(() => {
-    if (!selectedFile) {
-      return null
-    }
+  const previewUrl =
+    useMemo(() => {
+      if (!selectedFile) {
+        return null
+      }
 
-    return URL.createObjectURL(selectedFile)
-  }, [selectedFile])
+      return URL.createObjectURL(
+        selectedFile,
+      )
+    }, [
+      selectedFile,
+    ])
 
 
   useEffect(() => {
     return () => {
       if (previewUrl) {
-        URL.revokeObjectURL(previewUrl)
+        URL.revokeObjectURL(
+          previewUrl,
+        )
       }
     }
-  }, [previewUrl])
+  }, [
+    previewUrl,
+  ])
 
 
-  const vehicleLookupMutation = useMutation({
-    mutationFn: async () => {
-      const cleanRegistration =
-        registration.trim()
+  const vehicleLookupMutation =
+    useMutation({
+      mutationFn:
+        async () => {
+          const cleanRegistration =
+            registration.trim()
 
-      if (!cleanRegistration) {
-        throw new Error(
-          'Enter a registration first',
-        )
-      }
+          if (!cleanRegistration) {
+            throw new Error(
+              'Enter a registration first',
+            )
+          }
 
-      return getVehicle(cleanRegistration)
-    },
-
-    onSuccess: (vehicle) => {
-      setVehicleExists(true)
-      setExistingVehicle(vehicle)
-
-      setMake('')
-      setModel('')
-      setYear('')
-    },
-
-    onError: () => {
-      setVehicleExists(false)
-      setExistingVehicle(null)
-    },
-  })
-
-
-  const inspectionMutation = useMutation({
-    mutationFn: async () => {
-      const cleanRegistration =
-        registration.trim()
-
-      if (!cleanRegistration) {
-        throw new Error(
-          'Please enter a registration',
-        )
-      }
-
-      if (vehicleExists === null) {
-        throw new Error(
-          'Please check the vehicle first',
-        )
-      }
-
-      if (!selectedFile) {
-        throw new Error(
-          'Please select an image',
-        )
-      }
-
-      if (vehicleExists === false) {
-        if (!make.trim()) {
-          throw new Error(
-            'Please enter the vehicle make',
+          return getVehicle(
+            cleanRegistration,
           )
-        }
+        },
 
-        if (!model.trim()) {
-          throw new Error(
-            'Please enter the vehicle model',
+      onSuccess:
+        (
+          vehicle,
+        ) => {
+          setVehicleExists(
+            true,
           )
-        }
 
-        const numericYear = Number(year)
+          setExistingVehicle(
+            vehicle,
+          )
+
+          setMake('')
+          setModel('')
+          setYear('')
+        },
+
+      onError: () => {
+        setVehicleExists(
+          false,
+        )
+
+        setExistingVehicle(
+          null,
+        )
+      },
+    })
+
+
+  const inspectionMutation =
+    useMutation({
+      mutationFn:
+        async () => {
+          const cleanRegistration =
+            registration.trim()
+
+          if (!cleanRegistration) {
+            throw new Error(
+              'Please enter a registration',
+            )
+          }
+
+          if (
+            vehicleExists ===
+            null
+          ) {
+            throw new Error(
+              'Please check the vehicle first',
+            )
+          }
+
+          if (!selectedFile) {
+            throw new Error(
+              'Please select an image',
+            )
+          }
+
+          if (
+            vehicleExists ===
+            false
+          ) {
+            if (!make.trim()) {
+              throw new Error(
+                'Please enter the vehicle make',
+              )
+            }
+
+            if (
+              !model.trim()
+            ) {
+              throw new Error(
+                'Please enter the vehicle model',
+              )
+            }
+
+            const numericYear =
+              Number(year)
+
+            if (
+              !year ||
+              Number.isNaN(
+                numericYear,
+              ) ||
+              numericYear < 1900 ||
+              numericYear >
+                (
+                  new Date()
+                    .getFullYear() +
+                  1
+                )
+            ) {
+              throw new Error(
+                'Please enter a valid vehicle year',
+              )
+            }
+
+            await createVehicle({
+              registration:
+                cleanRegistration,
+
+              make:
+                make.trim(),
+
+              model:
+                model.trim(),
+
+              year:
+                numericYear,
+            })
+          }
+
+          setLastRegistration(
+            cleanRegistration
+              .replace(
+                /\s/g,
+                '',
+              )
+              .toUpperCase(),
+          )
+
+          const uploadResult =
+            await uploadDamageImage(
+              cleanRegistration,
+              selectedFile,
+            )
+
+          const imageId =
+            uploadResult
+              .image
+              .id
+
+          return analyseDamageImage(
+            imageId,
+          )
+        },
+
+      onSuccess: () => {
+        setRegistration('')
+        setSelectedFile(
+          null,
+        )
+
+        setVehicleExists(
+          null,
+        )
+
+        setExistingVehicle(
+          null,
+        )
+
+        setMake('')
+        setModel('')
+        setYear('')
+
+        vehicleLookupMutation
+          .reset()
 
         if (
-          !year ||
-          Number.isNaN(numericYear) ||
-          numericYear < 1900 ||
-          numericYear > new Date().getFullYear() + 1
+          fileInputRef
+            .current
         ) {
-          throw new Error(
-            'Please enter a valid vehicle year',
-          )
+          fileInputRef
+            .current
+            .value = ''
         }
-
-        await createVehicle({
-          registration: cleanRegistration,
-          make: make.trim(),
-          model: model.trim(),
-          year: numericYear,
-        })
-      }
-
-      setLastRegistration(
-        cleanRegistration
-          .replace(/\s/g, '')
-          .toUpperCase(),
-      )
-
-      const uploadResult =
-        await uploadDamageImage(
-          cleanRegistration,
-          selectedFile,
-        )
-
-      const imageId =
-        uploadResult.image.id
-
-      return analyseDamageImage(imageId)
-    },
-
-    onSuccess: () => {
-      setRegistration('')
-      setSelectedFile(null)
-
-      setVehicleExists(null)
-      setExistingVehicle(null)
-
-      setMake('')
-      setModel('')
-      setYear('')
-
-      vehicleLookupMutation.reset()
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    },
-  })
+      },
+    })
 
 
   function resetVehicleLookup() {
-    setVehicleExists(null)
-    setExistingVehicle(null)
+    setVehicleExists(
+      null,
+    )
+
+    setExistingVehicle(
+      null,
+    )
 
     setMake('')
     setModel('')
     setYear('')
 
-    vehicleLookupMutation.reset()
-    inspectionMutation.reset()
+    vehicleLookupMutation
+      .reset()
+
+    inspectionMutation
+      .reset()
   }
 
 
   function removeImage() {
-    setSelectedFile(null)
+    setSelectedFile(
+      null,
+    )
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+    if (
+      fileInputRef.current
+    ) {
+      fileInputRef
+        .current
+        .value = ''
     }
   }
 
 
   function clearForm() {
     setRegistration('')
-    setSelectedFile(null)
+    setSelectedFile(
+      null,
+    )
 
-    setVehicleExists(null)
-    setExistingVehicle(null)
+    setVehicleExists(
+      null,
+    )
+
+    setExistingVehicle(
+      null,
+    )
 
     setMake('')
     setModel('')
     setYear('')
 
-    setLastRegistration('')
+    setLastRegistration(
+      '',
+    )
 
-    vehicleLookupMutation.reset()
-    inspectionMutation.reset()
+    vehicleLookupMutation
+      .reset()
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+    inspectionMutation
+      .reset()
+
+    if (
+      fileInputRef.current
+    ) {
+      fileInputRef
+        .current
+        .value = ''
     }
   }
 
@@ -249,11 +387,14 @@ function NewInspection() {
 
 
   const inspection =
-    inspectionMutation.data?.inspection
+    inspectionMutation
+      .data
+      ?.inspection
 
 
   if (
-    inspectionMutation.isSuccess &&
+    inspectionMutation
+      .isSuccess &&
     inspection
   ) {
     return (
@@ -261,7 +402,8 @@ function NewInspection() {
         <div>
           <p
             className="
-              text-xs font-medium
+              text-xs
+              font-medium
               uppercase
               tracking-[0.25em]
               text-neutral-500
@@ -273,7 +415,8 @@ function NewInspection() {
           <h1
             className="
               mt-2
-              text-3xl font-semibold
+              text-3xl
+              font-semibold
               tracking-tight
               md:text-4xl
             "
@@ -281,9 +424,16 @@ function NewInspection() {
             AI Inspection Result
           </h1>
 
-          <p className="mt-2 text-sm text-neutral-400">
-            RoadProof has completed the vehicle
-            damage assessment.
+          <p
+            className="
+              mt-2
+              text-sm
+              text-neutral-400
+            "
+          >
+            RoadProof has completed
+            the vehicle damage
+            assessment.
           </p>
         </div>
 
@@ -291,26 +441,39 @@ function NewInspection() {
           className="
             mt-8
             rounded-2xl
-            border border-white/10
+            border
+            border-white/10
             bg-[#0d0f12]
             p-6
           "
         >
           <div
             className="
-              flex flex-col gap-5
-              border-b border-white/10
+              flex
+              flex-col
+              gap-5
+              border-b
+              border-white/10
               pb-6
               sm:flex-row
               sm:items-center
               sm:justify-between
             "
           >
-            <div className="flex items-center gap-4">
+            <div
+              className="
+                flex
+                items-center
+                gap-4
+              "
+            >
               <div
                 className="
-                  flex h-12 w-12
-                  items-center justify-center
+                  flex
+                  h-12
+                  w-12
+                  items-center
+                  justify-center
                   rounded-2xl
                   bg-emerald-500/10
                 "
@@ -326,8 +489,16 @@ function NewInspection() {
                   Inspection completed
                 </p>
 
-                <p className="mt-1 text-xs text-neutral-500">
-                  {lastRegistration}
+                <p
+                  className="
+                    mt-1
+                    text-xs
+                    text-neutral-500
+                  "
+                >
+                  {
+                    lastRegistration
+                  }
                 </p>
               </div>
             </div>
@@ -335,10 +506,13 @@ function NewInspection() {
             <div
               className="
                 rounded-full
-                border border-emerald-500/20
+                border
+                border-emerald-500/20
                 bg-emerald-500/10
-                px-3 py-1.5
-                text-xs font-medium
+                px-3
+                py-1.5
+                text-xs
+                font-medium
                 text-emerald-300
               "
             >
@@ -348,7 +522,9 @@ function NewInspection() {
 
           <div
             className="
-              mt-6 grid gap-4
+              mt-6
+              grid
+              gap-4
               sm:grid-cols-2
               lg:grid-cols-4
             "
@@ -356,31 +532,40 @@ function NewInspection() {
             <ResultCard
               label="Damage"
               value={
-                inspection.damage_detected
-                  ? 'Detected'
-                  : 'None'
+                inspection
+                  .damage_detected
+                  ? 'Damage confirmed'
+                  : (
+                    'No confirmed ' +
+                    'damage'
+                  )
               }
             />
 
             <ResultCard
               label="Severity"
               value={
-                inspection.severity ??
-                'None'
+                formatSeverity(
+                  inspection
+                    .severity,
+                )
               }
             />
 
             <ResultCard
               label="Detections"
               value={String(
-                inspection.damage_count,
+                inspection
+                  .damage_count,
               )}
             />
 
             <ResultCard
               label="Confidence"
               value={
-                inspection.highest_confidence
+                inspection
+                  .highest_confidence !==
+                null
                   ? `${Math.round(
                       inspection
                         .highest_confidence *
@@ -391,69 +576,88 @@ function NewInspection() {
             />
           </div>
 
-          {inspection.damage_detected && (
-            <div
-              className="
-                mt-6
-                rounded-2xl
-                border border-amber-500/20
-                bg-amber-500/[0.06]
-                p-5
-              "
-            >
-              <div className="flex gap-3">
-                <AlertTriangle
-                  size={19}
-                  className="
-                    mt-0.5
-                    shrink-0
-                    text-amber-400
-                  "
-                />
-
-                <div>
-                  <p className="text-sm font-medium">
-                    Vehicle damage detected
-                  </p>
-
-                  <p
+          {
+            inspection
+              .damage_detected && (
+              <div
+                className="
+                  mt-6
+                  rounded-2xl
+                  border
+                  border-amber-500/20
+                  bg-amber-500/[0.06]
+                  p-5
+                "
+              >
+                <div className="flex gap-3">
+                  <AlertTriangle
+                    size={19}
                     className="
-                      mt-1
-                      text-xs leading-5
-                      text-neutral-400
+                      mt-0.5
+                      shrink-0
+                      text-amber-400
                     "
-                  >
-                    Review the full inspection
-                    report for damage locations,
-                    confidence and severity
-                    information.
-                  </p>
+                  />
+
+                  <div>
+                    <p className="text-sm font-medium">
+                      Vehicle damage
+                      detected
+                    </p>
+
+                    <p
+                      className="
+                        mt-1
+                        text-xs
+                        leading-5
+                        text-neutral-400
+                      "
+                    >
+                      Review the full
+                      inspection report
+                      for damage locations,
+                      confidence and
+                      severity information.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          }
 
           <div
             className="
-              mt-7 flex flex-col gap-3
-              border-t border-white/10
+              mt-7
+              flex
+              flex-col
+              gap-3
+              border-t
+              border-white/10
               pt-6
               sm:flex-row
             "
           >
             <button
+              type="button"
               onClick={() => {
                 navigate(
-                  `/app/reports/${inspection.id}`,
+                  (
+                    '/app/reports/' +
+                    inspection.id
+                  ),
                 )
               }}
               className="
-                flex flex-1
-                items-center justify-center
+                flex
+                flex-1
+                items-center
+                justify-center
                 rounded-xl
                 bg-white
-                px-5 py-3
-                text-sm font-semibold
+                px-5
+                py-3
+                text-sm
+                font-semibold
                 text-black
                 transition
                 hover:bg-neutral-200
@@ -463,21 +667,31 @@ function NewInspection() {
             </button>
 
             <button
-              onClick={startNewInspection}
+              type="button"
+              onClick={
+                startNewInspection
+              }
               className="
-                flex flex-1
-                items-center justify-center
+                flex
+                flex-1
+                items-center
+                justify-center
                 gap-2
                 rounded-xl
-                border border-white/10
+                border
+                border-white/10
                 bg-white/[0.03]
-                px-5 py-3
-                text-sm font-medium
+                px-5
+                py-3
+                text-sm
+                font-medium
                 transition
                 hover:bg-white/[0.07]
               "
             >
-              <RotateCcw size={17} />
+              <RotateCcw
+                size={17}
+              />
 
               Start New Inspection
             </button>
@@ -493,7 +707,8 @@ function NewInspection() {
       <div>
         <p
           className="
-            text-xs font-medium
+            text-xs
+            font-medium
             uppercase
             tracking-[0.25em]
             text-neutral-500
@@ -505,7 +720,8 @@ function NewInspection() {
         <h1
           className="
             mt-2
-            text-3xl font-semibold
+            text-3xl
+            font-semibold
             tracking-tight
             md:text-4xl
           "
@@ -515,40 +731,57 @@ function NewInspection() {
 
         <p
           className="
-            mt-2 max-w-2xl
-            text-sm text-neutral-400
+            mt-2
+            max-w-2xl
+            text-sm
+            text-neutral-400
           "
         >
-          Check a vehicle registration,
-          upload a damage image and run
-          AI analysis.
+          Check a vehicle
+          registration, upload a
+          damage image and run AI
+          analysis.
         </p>
       </div>
 
       <div
         className="
-          mt-8 grid gap-6
+          mt-8
+          grid
+          gap-6
           lg:grid-cols-[1fr_1.2fr]
         "
       >
         <section
           className="
             rounded-2xl
-            border border-white/10
+            border
+            border-white/10
             bg-[#0d0f12]
             p-6
           "
         >
-          <div className="flex items-center gap-3">
+          <div
+            className="
+              flex
+              items-center
+              gap-3
+            "
+          >
             <div
               className="
-                flex h-10 w-10
-                items-center justify-center
+                flex
+                h-10
+                w-10
+                items-center
+                justify-center
                 rounded-xl
                 bg-white/[0.05]
               "
             >
-              <CarFront size={19} />
+              <CarFront
+                size={19}
+              />
             </div>
 
             <div>
@@ -557,16 +790,19 @@ function NewInspection() {
               </h2>
 
               <p className="text-xs text-neutral-500">
-                Find an existing vehicle or
-                register a new one
+                Find an existing
+                vehicle or register
+                a new one
               </p>
             </div>
           </div>
 
           <label
             className="
-              mt-6 block
-              text-xs font-medium
+              mt-6
+              block
+              text-xs
+              font-medium
               text-neutral-400
             "
           >
@@ -575,26 +811,37 @@ function NewInspection() {
 
           <div className="mt-2 flex gap-2">
             <input
-              value={registration}
-              onChange={(event) => {
+              value={
+                registration
+              }
+              onChange={(
+                event,
+              ) => {
                 setRegistration(
-                  event.target.value,
+                  event
+                    .target
+                    .value,
                 )
 
                 if (
-                  vehicleExists !== null
+                  vehicleExists !==
+                  null
                 ) {
                   resetVehicleLookup()
                 }
               }}
               placeholder="e.g. AB12 CDE"
               className="
-                min-w-0 flex-1
+                min-w-0
+                flex-1
                 rounded-xl
-                border border-white/10
+                border
+                border-white/10
                 bg-black/20
-                px-4 py-3
-                text-sm text-white
+                px-4
+                py-3
+                text-sm
+                text-white
                 outline-none
                 placeholder:text-neutral-600
                 focus:border-white/30
@@ -604,46 +851,63 @@ function NewInspection() {
             <button
               type="button"
               disabled={
-                !registration.trim() ||
-                vehicleLookupMutation.isPending
+                !registration
+                  .trim() ||
+                vehicleLookupMutation
+                  .isPending
               }
               onClick={() =>
-                vehicleLookupMutation.mutate()
+                vehicleLookupMutation
+                  .mutate()
               }
               className="
-                flex items-center
-                justify-center gap-2
+                flex
+                items-center
+                justify-center
+                gap-2
                 rounded-xl
-                border border-white/10
+                border
+                border-white/10
                 bg-white/[0.05]
                 px-4
-                text-sm font-medium
+                text-sm
+                font-medium
                 transition
                 hover:bg-white/[0.09]
                 disabled:cursor-not-allowed
                 disabled:opacity-40
               "
             >
-              {vehicleLookupMutation.isPending ? (
-                <LoaderCircle
-                  size={17}
-                  className="animate-spin"
-                />
-              ) : (
-                <Search size={17} />
-              )}
+              {
+                vehicleLookupMutation
+                  .isPending
+                  ? (
+                    <LoaderCircle
+                      size={17}
+                      className="animate-spin"
+                    />
+                  )
+                  : (
+                    <Search
+                      size={17}
+                    />
+                  )
+              }
 
               Check
             </button>
           </div>
 
-          {vehicleExists === true &&
+          {
+            vehicleExists ===
+              true &&
             existingVehicle && (
               <div
                 className="
                   mt-4
                   rounded-2xl
-                  border border-emerald-500/20
+                  border
+                  border-emerald-500/20
                   bg-emerald-500/[0.06]
                   p-4
                 "
@@ -651,9 +915,12 @@ function NewInspection() {
                 <div className="flex gap-3">
                   <div
                     className="
-                      flex h-9 w-9
+                      flex
+                      h-9
+                      w-9
                       shrink-0
-                      items-center justify-center
+                      items-center
+                      justify-center
                       rounded-xl
                       bg-emerald-500/10
                     "
@@ -667,7 +934,8 @@ function NewInspection() {
                   <div>
                     <p
                       className="
-                        text-sm font-medium
+                        text-sm
+                        font-medium
                         text-emerald-200
                       "
                     >
@@ -681,9 +949,18 @@ function NewInspection() {
                         text-neutral-400
                       "
                     >
-                      {existingVehicle.year}{' '}
-                      {existingVehicle.make}{' '}
-                      {existingVehicle.model}
+                      {
+                        existingVehicle
+                          .year
+                      }{' '}
+                      {
+                        existingVehicle
+                          .make
+                      }{' '}
+                      {
+                        existingVehicle
+                          .model
+                      }
                     </p>
 
                     <p
@@ -694,149 +971,189 @@ function NewInspection() {
                       "
                     >
                       {
-                        existingVehicle.registration
+                        existingVehicle
+                          .registration
                       }
                     </p>
                   </div>
                 </div>
               </div>
-            )}
+            )
+          }
 
-          {vehicleExists === false && (
-            <div
-              className="
-                mt-4
-                rounded-2xl
-                border border-white/10
-                bg-white/[0.025]
-                p-4
-              "
-            >
-              <p className="text-sm font-medium">
-                New vehicle
-              </p>
-
-              <p
+          {
+            vehicleExists ===
+              false && (
+              <div
                 className="
-                  mt-1
-                  text-xs leading-5
-                  text-neutral-500
+                  mt-4
+                  rounded-2xl
+                  border
+                  border-white/10
+                  bg-white/[0.025]
+                  p-4
                 "
               >
-                This registration isn't
-                registered yet. Add the vehicle
-                details and RoadProof will create
-                it when the inspection starts.
-              </p>
+                <p className="text-sm font-medium">
+                  New vehicle
+                </p>
 
-              <div className="mt-5 space-y-4">
-                <div>
-                  <label
-                    className="
-                      block
-                      text-xs font-medium
-                      text-neutral-400
-                    "
-                  >
-                    Make
-                  </label>
+                <p
+                  className="
+                    mt-1
+                    text-xs
+                    leading-5
+                    text-neutral-500
+                  "
+                >
+                  This registration
+                  isn't registered yet.
+                  Add the vehicle details
+                  and RoadProof will
+                  create it when the
+                  inspection starts.
+                </p>
 
-                  <input
-                    value={make}
-                    onChange={(event) =>
-                      setMake(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="e.g. BMW"
-                    className="
-                      mt-2 w-full
-                      rounded-xl
-                      border border-white/10
-                      bg-black/20
-                      px-4 py-3
-                      text-sm
-                      outline-none
-                      placeholder:text-neutral-600
-                      focus:border-white/30
-                    "
-                  />
-                </div>
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <label
+                      className="
+                        block
+                        text-xs
+                        font-medium
+                        text-neutral-400
+                      "
+                    >
+                      Make
+                    </label>
 
-                <div>
-                  <label
-                    className="
-                      block
-                      text-xs font-medium
-                      text-neutral-400
-                    "
-                  >
-                    Model
-                  </label>
+                    <input
+                      value={
+                        make
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setMake(
+                          event
+                            .target
+                            .value,
+                        )
+                      }
+                      placeholder="e.g. BMW"
+                      className="
+                        mt-2
+                        w-full
+                        rounded-xl
+                        border
+                        border-white/10
+                        bg-black/20
+                        px-4
+                        py-3
+                        text-sm
+                        outline-none
+                        placeholder:text-neutral-600
+                        focus:border-white/30
+                      "
+                    />
+                  </div>
 
-                  <input
-                    value={model}
-                    onChange={(event) =>
-                      setModel(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="e.g. M3"
-                    className="
-                      mt-2 w-full
-                      rounded-xl
-                      border border-white/10
-                      bg-black/20
-                      px-4 py-3
-                      text-sm
-                      outline-none
-                      placeholder:text-neutral-600
-                      focus:border-white/30
-                    "
-                  />
-                </div>
+                  <div>
+                    <label
+                      className="
+                        block
+                        text-xs
+                        font-medium
+                        text-neutral-400
+                      "
+                    >
+                      Model
+                    </label>
 
-                <div>
-                  <label
-                    className="
-                      block
-                      text-xs font-medium
-                      text-neutral-400
-                    "
-                  >
-                    Year
-                  </label>
+                    <input
+                      value={
+                        model
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setModel(
+                          event
+                            .target
+                            .value,
+                        )
+                      }
+                      placeholder="e.g. M3"
+                      className="
+                        mt-2
+                        w-full
+                        rounded-xl
+                        border
+                        border-white/10
+                        bg-black/20
+                        px-4
+                        py-3
+                        text-sm
+                        outline-none
+                        placeholder:text-neutral-600
+                        focus:border-white/30
+                      "
+                    />
+                  </div>
 
-                  <input
-                    value={year}
-                    onChange={(event) =>
-                      setYear(
-                        event.target.value,
-                      )
-                    }
-                    inputMode="numeric"
-                    placeholder="e.g. 2024"
-                    className="
-                      mt-2 w-full
-                      rounded-xl
-                      border border-white/10
-                      bg-black/20
-                      px-4 py-3
-                      text-sm
-                      outline-none
-                      placeholder:text-neutral-600
-                      focus:border-white/30
-                    "
-                  />
+                  <div>
+                    <label
+                      className="
+                        block
+                        text-xs
+                        font-medium
+                        text-neutral-400
+                      "
+                    >
+                      Year
+                    </label>
+
+                    <input
+                      value={
+                        year
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setYear(
+                          event
+                            .target
+                            .value,
+                        )
+                      }
+                      inputMode="numeric"
+                      placeholder="e.g. 2024"
+                      className="
+                        mt-2
+                        w-full
+                        rounded-xl
+                        border
+                        border-white/10
+                        bg-black/20
+                        px-4
+                        py-3
+                        text-sm
+                        outline-none
+                        placeholder:text-neutral-600
+                        focus:border-white/30
+                      "
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          }
 
           <div className="mt-6">
             <p
               className="
-                text-xs font-medium
+                text-xs
+                font-medium
                 text-neutral-400
               "
             >
@@ -845,7 +1162,8 @@ function NewInspection() {
 
             <label
               className="
-                mt-2 flex
+                mt-2
+                flex
                 cursor-pointer
                 flex-col
                 items-center
@@ -855,7 +1173,8 @@ function NewInspection() {
                 border-dashed
                 border-white/15
                 bg-white/[0.02]
-                px-6 py-9
+                px-6
+                py-9
                 text-center
                 transition
                 hover:border-white/30
@@ -870,7 +1189,8 @@ function NewInspection() {
               <p
                 className="
                   mt-3
-                  text-sm font-medium
+                  text-sm
+                  font-medium
                 "
               >
                 Upload damage image
@@ -887,94 +1207,128 @@ function NewInspection() {
               </p>
 
               <input
-                ref={fileInputRef}
+                ref={
+                  fileInputRef
+                }
                 type="file"
                 accept="image/jpeg,image/png"
                 className="hidden"
-                onChange={(event) => {
+                onChange={(
+                  event,
+                ) => {
                   const file =
-                    event.target.files?.[0] ??
+                    event
+                      .target
+                      .files?.[0] ??
                     null
 
-                  setSelectedFile(file)
+                  setSelectedFile(
+                    file,
+                  )
                 }}
               />
             </label>
 
-            {selectedFile && (
-              <div
-                className="
-                  mt-3 flex
-                  items-center
-                  justify-between
-                  rounded-xl
-                  border border-white/10
-                  bg-white/[0.03]
-                  px-4 py-3
-                "
-              >
-                <div className="min-w-0">
-                  <p
-                    className="
-                      truncate
-                      text-xs font-medium
-                    "
-                  >
-                    {selectedFile.name}
-                  </p>
-
-                  <p
-                    className="
-                      mt-1
-                      text-[11px]
-                      text-neutral-500
-                    "
-                  >
-                    {(
-                      selectedFile.size /
-                      1024 /
-                      1024
-                    ).toFixed(2)}{' '}
-                    MB
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={removeImage}
+            {
+              selectedFile && (
+                <div
                   className="
-                    ml-3 rounded-lg
-                    p-2
-                    text-neutral-500
-                    transition
-                    hover:bg-white/5
-                    hover:text-white
+                    mt-3
+                    flex
+                    items-center
+                    justify-between
+                    rounded-xl
+                    border
+                    border-white/10
+                    bg-white/[0.03]
+                    px-4
+                    py-3
                   "
-                  aria-label="Remove image"
                 >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
+                  <div className="min-w-0">
+                    <p
+                      className="
+                        truncate
+                        text-xs
+                        font-medium
+                      "
+                    >
+                      {
+                        selectedFile
+                          .name
+                      }
+                    </p>
+
+                    <p
+                      className="
+                        mt-1
+                        text-[11px]
+                        text-neutral-500
+                      "
+                    >
+                      {(
+                        selectedFile
+                          .size /
+                        1024 /
+                        1024
+                      ).toFixed(
+                        2,
+                      )}{' '}
+                      MB
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={
+                      removeImage
+                    }
+                    className="
+                      ml-3
+                      rounded-lg
+                      p-2
+                      text-neutral-500
+                      transition
+                      hover:bg-white/5
+                      hover:text-white
+                    "
+                    aria-label="Remove image"
+                  >
+                    <X
+                      size={16}
+                    />
+                  </button>
+                </div>
+              )
+            }
           </div>
 
           <button
+            type="button"
             disabled={
-              vehicleExists === null ||
+              vehicleExists ===
+                null ||
               !selectedFile ||
-              inspectionMutation.isPending
+              inspectionMutation
+                .isPending
             }
             onClick={() =>
-              inspectionMutation.mutate()
+              inspectionMutation
+                .mutate()
             }
             className="
-              mt-6 flex w-full
+              mt-6
+              flex
+              w-full
               items-center
-              justify-center gap-2
+              justify-center
+              gap-2
               rounded-xl
               bg-white
-              px-5 py-3
-              text-sm font-semibold
+              px-5
+              py-3
+              text-sm
+              font-semibold
               text-black
               transition
               hover:bg-neutral-200
@@ -982,31 +1336,48 @@ function NewInspection() {
               disabled:opacity-40
             "
           >
-            {inspectionMutation.isPending ? (
-              <LoaderCircle
-                size={18}
-                className="animate-spin"
-              />
-            ) : (
-              <ScanLine size={18} />
-            )}
+            {
+              inspectionMutation
+                .isPending
+                ? (
+                  <LoaderCircle
+                    size={18}
+                    className="animate-spin"
+                  />
+                )
+                : (
+                  <ScanLine
+                    size={18}
+                  />
+                )
+            }
 
-            {inspectionMutation.isPending
-              ? 'Analysing...'
-              : 'Run AI Inspection'}
+            {
+              inspectionMutation
+                .isPending
+                ? 'Analysing...'
+                : 'Run AI Inspection'
+            }
           </button>
 
           <button
             type="button"
-            onClick={clearForm}
+            onClick={
+              clearForm
+            }
             className="
-              mt-3 flex w-full
+              mt-3
+              flex
+              w-full
               items-center
-              justify-center gap-2
+              justify-center
+              gap-2
               rounded-xl
-              border border-white/10
+              border
+              border-white/10
               bg-transparent
-              px-5 py-3
+              px-5
+              py-3
               text-sm
               text-neutral-400
               transition
@@ -1014,49 +1385,68 @@ function NewInspection() {
               hover:text-white
             "
           >
-            <RotateCcw size={16} />
+            <RotateCcw
+              size={16}
+            />
 
             Clear
           </button>
 
-          {inspectionMutation.isError && (
-            <div
-              className="
-                mt-4
-                rounded-xl
-                border border-red-500/20
-                bg-red-500/10
-                p-4
-              "
-            >
-              <p className="text-sm text-red-300">
-                {
-                  inspectionMutation.error
-                    .message
-                }
-              </p>
-            </div>
-          )}
+          {
+            inspectionMutation
+              .isError && (
+              <div
+                className="
+                  mt-4
+                  rounded-xl
+                  border
+                  border-red-500/20
+                  bg-red-500/10
+                  p-4
+                "
+              >
+                <p className="text-sm text-red-300">
+                  {
+                    inspectionMutation
+                      .error
+                      .message
+                  }
+                </p>
+              </div>
+            )
+          }
         </section>
 
         <section
           className="
             rounded-2xl
-            border border-white/10
+            border
+            border-white/10
             bg-[#0d0f12]
             p-6
           "
         >
-          <div className="flex items-center gap-3">
+          <div
+            className="
+              flex
+              items-center
+              gap-3
+            "
+          >
             <div
               className="
-                flex h-10 w-10
-                items-center justify-center
+                flex
+                h-10
+                w-10
+                items-center
+                justify-center
                 rounded-xl
                 bg-white/[0.05]
               "
             >
-              <ImageIcon size={19} />
+              <ImageIcon
+                size={19}
+              />
             </div>
 
             <div>
@@ -1065,66 +1455,75 @@ function NewInspection() {
               </h2>
 
               <p className="text-xs text-neutral-500">
-                Review the image before analysis
+                Review the image
+                before analysis
               </p>
             </div>
           </div>
 
           <div
             className="
-              mt-6 flex
+              mt-6
+              flex
               min-h-[420px]
               items-center
               justify-center
               overflow-hidden
               rounded-2xl
-              border border-white/10
+              border
+              border-white/10
               bg-black/30
             "
           >
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt="Vehicle damage preview"
-                className="
-                  h-full
-                  max-h-[520px]
-                  w-full
-                  object-contain
-                "
-              />
-            ) : (
-              <div className="px-6 text-center">
-                <ImageIcon
-                  size={30}
-                  className="
-                    mx-auto
-                    text-neutral-600
-                  "
-                />
+            {
+              previewUrl
+                ? (
+                  <img
+                    src={
+                      previewUrl
+                    }
+                    alt="Vehicle damage preview"
+                    className="
+                      h-full
+                      max-h-[520px]
+                      w-full
+                      object-contain
+                    "
+                  />
+                )
+                : (
+                  <div className="px-6 text-center">
+                    <ImageIcon
+                      size={30}
+                      className="
+                        mx-auto
+                        text-neutral-600
+                      "
+                    />
 
-                <p
-                  className="
-                    mt-3
-                    text-sm
-                    text-neutral-400
-                  "
-                >
-                  No image selected
-                </p>
+                    <p
+                      className="
+                        mt-3
+                        text-sm
+                        text-neutral-400
+                      "
+                    >
+                      No image selected
+                    </p>
 
-                <p
-                  className="
-                    mt-1
-                    text-xs
-                    text-neutral-600
-                  "
-                >
-                  Your uploaded image will
-                  appear here
-                </p>
-              </div>
-            )}
+                    <p
+                      className="
+                        mt-1
+                        text-xs
+                        text-neutral-600
+                      "
+                    >
+                      Your uploaded image
+                      will appear here
+                    </p>
+                  </div>
+                )
+            }
           </div>
         </section>
       </div>
@@ -1147,7 +1546,8 @@ function ResultCard({
     <div
       className="
         rounded-2xl
-        border border-white/10
+        border
+        border-white/10
         bg-white/[0.025]
         p-5
       "
@@ -1159,7 +1559,8 @@ function ResultCard({
       <p
         className="
           mt-2
-          text-xl font-semibold
+          text-xl
+          font-semibold
           capitalize
         "
       >

@@ -288,6 +288,67 @@ class InspectionReportResponse(
 
 
 # ---------------------------------
+# Paginated inspection reports
+# ---------------------------------
+
+
+class InspectionReportListItem(
+    BaseModel
+):
+    id: int
+
+    registration: str
+
+    make: str
+
+    model: str
+
+    damage_detected: (
+        bool | None
+    ) = None
+
+    damage_count: (
+        int | None
+    ) = None
+
+    severity: (
+        str | None
+    ) = None
+
+    severity_score: (
+        float | None
+    ) = None
+
+    inspection_confidence: (
+        str | None
+    ) = None
+
+    manual_review_required: (
+        bool | None
+    ) = None
+
+    created_at: datetime
+
+    report_url: str
+
+
+class InspectionReportsPageResponse(
+    BaseModel
+):
+    items: list[
+        InspectionReportListItem
+    ]
+
+    total: int
+
+    page: int
+
+    page_size: int
+
+    total_pages: int
+
+
+# ---------------------------------
 # Vehicle inspection summary
 # ---------------------------------
 

@@ -12,6 +12,7 @@ import {
   CircleHelp,
   Clock3,
   ImageIcon,
+  LoaderCircle,
   Pencil,
   Save,
   ScanLine,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react'
 
 import {
+  useEffect,
   useState,
 } from 'react'
 
@@ -33,10 +35,15 @@ import {
 import {
   deleteDamageImage,
   deleteVehicle,
+  formatSeverity,
+  getProtectedImageUrl,
   getVehicle,
   getVehicleDamageImages,
   getVehicleInspectionSummary,
+  hasAssignedSeverity,
+  revokeProtectedImageUrl,
   updateVehicle,
+  type DamageImage,
   type UpdateVehicleInput,
 } from '../api/client'
 
@@ -59,9 +66,161 @@ function formatDate(
 }
 
 
+type ProtectedImageThumbnailProps = {
+  image: DamageImage
+}
+
+
+function ProtectedImageThumbnail({
+  image,
+}: ProtectedImageThumbnailProps) {
+  const [
+    objectUrl,
+    setObjectUrl,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true)
+
+  const [
+    hasError,
+    setHasError,
+  ] = useState(false)
+
+
+  useEffect(() => {
+    let active = true
+    let createdUrl:
+      | string
+      | null = null
+
+    async function loadImage() {
+      setIsLoading(true)
+      setHasError(false)
+
+      try {
+        const url =
+          await getProtectedImageUrl(
+            image.content_url,
+          )
+
+        createdUrl = url
+
+        if (!active) {
+          revokeProtectedImageUrl(
+            url,
+          )
+
+          return
+        }
+
+        setObjectUrl(
+          url,
+        )
+      } catch {
+        if (active) {
+          setHasError(
+            true,
+          )
+        }
+      } finally {
+        if (active) {
+          setIsLoading(
+            false,
+          )
+        }
+      }
+    }
+
+    loadImage()
+
+    return () => {
+      active = false
+
+      if (createdUrl) {
+        revokeProtectedImageUrl(
+          createdUrl,
+        )
+      }
+    }
+  }, [
+    image.content_url,
+  ])
+
+
+  return (
+    <div
+      className="
+        flex
+        h-20
+        w-28
+        shrink-0
+        items-center
+        justify-center
+        overflow-hidden
+        rounded-xl
+        border
+        border-white/10
+        bg-black/30
+      "
+    >
+      {isLoading ? (
+        <LoaderCircle
+          size={18}
+          className="
+            animate-spin
+            text-neutral-500
+          "
+        />
+      ) : hasError ? (
+        <div className="px-2 text-center">
+          <ImageIcon
+            size={17}
+            className="
+              mx-auto
+              text-neutral-600
+            "
+          />
+
+          <p
+            className="
+              mt-1
+              text-[10px]
+              text-neutral-600
+            "
+          >
+            Preview unavailable
+          </p>
+        </div>
+      ) : objectUrl ? (
+        <img
+          src={objectUrl}
+          alt={image.filename}
+          className="
+            h-full
+            w-full
+            object-cover
+          "
+        />
+      ) : (
+        <ImageIcon
+          size={18}
+          className="text-neutral-600"
+        />
+      )}
+    </div>
+  )
+}
+
+
 function VehicleDetails() {
-  const { registration = '' } =
-    useParams()
+  const {
+    registration = '',
+  } = useParams()
 
   const navigate =
     useNavigate()
@@ -69,13 +228,22 @@ function VehicleDetails() {
   const queryClient =
     useQueryClient()
 
-  const [isEditing, setIsEditing] =
-    useState(false)
+  const [
+    isEditing,
+    setIsEditing,
+  ] = useState(false)
 
-  const [formError, setFormError] =
-    useState<string | null>(null)
+  const [
+    formError,
+    setFormError,
+  ] = useState<string | null>(
+    null,
+  )
 
-  const [formData, setFormData] =
+  const [
+    formData,
+    setFormData,
+  ] =
     useState<UpdateVehicleInput>({
       registration: '',
       make: '',
@@ -98,7 +266,9 @@ function VehicleDetails() {
         ),
 
       enabled:
-        Boolean(registration),
+        Boolean(
+          registration,
+        ),
     })
 
 
@@ -115,7 +285,9 @@ function VehicleDetails() {
         ),
 
       enabled:
-        Boolean(registration),
+        Boolean(
+          registration,
+        ),
     })
 
 
@@ -132,7 +304,9 @@ function VehicleDetails() {
         ),
 
       enabled:
-        Boolean(registration),
+        Boolean(
+          registration,
+        ),
     })
 
 
@@ -233,8 +407,13 @@ function VehicleDetails() {
             }),
         ])
 
-        setIsEditing(false)
-        setFormError(null)
+        setIsEditing(
+          false,
+        )
+
+        setFormError(
+          null,
+        )
 
         if (
           updatedVehicle
@@ -248,7 +427,8 @@ function VehicleDetails() {
                 .registration
             ),
             {
-              replace: true,
+              replace:
+                true,
             },
           )
 
@@ -369,8 +549,13 @@ function VehicleDetails() {
           .year,
     })
 
-    setFormError(null)
-    setIsEditing(true)
+    setFormError(
+      null,
+    )
+
+    setIsEditing(
+      true,
+    )
   }
 
 
@@ -382,8 +567,13 @@ function VehicleDetails() {
       return
     }
 
-    setIsEditing(false)
-    setFormError(null)
+    setIsEditing(
+      false,
+    )
+
+    setFormError(
+      null,
+    )
   }
 
 
@@ -427,11 +617,13 @@ function VehicleDetails() {
       !Number.isInteger(
         formData.year,
       ) ||
-      formData.year < 1900 ||
+      formData.year <
+        1900 ||
       formData.year >
         (
           new Date()
-            .getFullYear() + 1
+            .getFullYear() +
+          1
         )
     ) {
       setFormError(
@@ -441,7 +633,9 @@ function VehicleDetails() {
       return
     }
 
-    setFormError(null)
+    setFormError(
+      null,
+    )
 
     updateVehicleMutation
       .mutate({
@@ -461,9 +655,12 @@ function VehicleDetails() {
 
 
   if (
-    vehicleQuery.isLoading ||
-    imagesQuery.isLoading ||
-    summaryQuery.isLoading
+    vehicleQuery
+      .isLoading ||
+    imagesQuery
+      .isLoading ||
+    summaryQuery
+      .isLoading
   ) {
     return (
       <div className="text-sm text-neutral-400">
@@ -474,9 +671,12 @@ function VehicleDetails() {
 
 
   if (
-    vehicleQuery.isError ||
-    imagesQuery.isError ||
-    summaryQuery.isError
+    vehicleQuery
+      .isError ||
+    imagesQuery
+      .isError ||
+    summaryQuery
+      .isError
   ) {
     return (
       <div className="text-sm text-red-400">
@@ -490,10 +690,17 @@ function VehicleDetails() {
     vehicleQuery.data
 
   const images =
-    imagesQuery.data ?? []
+    imagesQuery.data ??
+    []
 
   const summary =
     summaryQuery.data
+
+  const severityAssigned =
+    hasAssignedSeverity(
+      summary
+        ?.latest_severity,
+    )
 
 
   let assessmentLabel =
@@ -510,7 +717,8 @@ function VehicleDetails() {
 
 
   if (
-    summary?.assessment_status ===
+    summary
+      ?.assessment_status ===
     'manual_review_required'
   ) {
     assessmentLabel =
@@ -525,7 +733,8 @@ function VehicleDetails() {
     AssessmentIcon =
       ShieldAlert
   } else if (
-    summary?.assessment_status ===
+    summary
+      ?.assessment_status ===
     'damage_confirmed'
   ) {
     assessmentLabel =
@@ -540,7 +749,8 @@ function VehicleDetails() {
     AssessmentIcon =
       AlertTriangle
   } else if (
-    summary?.assessment_status ===
+    summary
+      ?.assessment_status ===
     'no_confirmed_damage'
   ) {
     assessmentLabel =
@@ -571,7 +781,9 @@ function VehicleDetails() {
           hover:text-white
         "
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft
+          size={16}
+        />
 
         Back to vehicles
       </Link>
@@ -633,8 +845,14 @@ function VehicleDetails() {
                   tracking-tight
                 "
               >
-                {vehicle?.make}{' '}
-                {vehicle?.model}
+                {
+                  vehicle
+                    ?.make
+                }{' '}
+                {
+                  vehicle
+                    ?.model
+                }
               </h1>
 
               <p
@@ -644,7 +862,10 @@ function VehicleDetails() {
                   text-neutral-400
                 "
               >
-                {vehicle?.year}
+                {
+                  vehicle
+                    ?.year
+                }
               </p>
             </div>
           </div>
@@ -930,7 +1151,9 @@ function VehicleDetails() {
               font-semibold
             "
           >
-            {assessmentLabel}
+            {
+              assessmentLabel
+            }
           </p>
 
           <p
@@ -969,13 +1192,17 @@ function VehicleDetails() {
             "
           >
             {
-              summary
-                ?.latest_severity ??
-              'Not assigned'
+              severityAssigned
+                ? formatSeverity(
+                    summary
+                      ?.latest_severity,
+                  )
+                : 'Not assigned'
             }
           </p>
 
           {
+            severityAssigned &&
             summary
               ?.latest_severity_score !==
               null &&
@@ -1250,11 +1477,13 @@ function VehicleDetails() {
                 text-neutral-500
               "
             >
-              Images uploaded for this vehicle
+              Protected images uploaded
+              for this vehicle
             </p>
           </div>
 
-          {images.length === 0 ? (
+          {images.length ===
+          0 ? (
             <div
               className="
                 flex
@@ -1288,7 +1517,9 @@ function VehicleDetails() {
                   text-neutral-500
                 "
               >
-                This vehicle has no uploaded damage images yet.
+                This vehicle has no
+                uploaded damage images
+                yet.
               </p>
             </div>
           ) : (
@@ -1304,33 +1535,61 @@ function VehicleDetails() {
                       }
                       className="
                         flex
-                        items-center
-                        justify-between
+                        flex-col
                         gap-4
                         px-6
                         py-4
+                        sm:flex-row
+                        sm:items-center
+                        sm:justify-between
                       "
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm">
-                          {
+                      <div
+                        className="
+                          flex
+                          min-w-0
+                          items-center
+                          gap-4
+                        "
+                      >
+                        <ProtectedImageThumbnail
+                          image={
                             image
-                              .filename
                           }
-                        </p>
+                        />
 
-                        <p
-                          className="
-                            mt-1
-                            text-xs
-                            text-neutral-500
-                          "
-                        >
-                          Image #
-                          {
-                            image.id
-                          }
-                        </p>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">
+                            {
+                              image
+                                .filename
+                            }
+                          </p>
+
+                          <p
+                            className="
+                              mt-1
+                              text-xs
+                              text-neutral-500
+                            "
+                          >
+                            Image #
+                            {
+                              image.id
+                            }
+                          </p>
+
+                          <p
+                            className="
+                              mt-1
+                              text-[11px]
+                              text-neutral-600
+                            "
+                          >
+                            Authenticated
+                            preview
+                          </p>
+                        </div>
                       </div>
 
                       <button
@@ -1348,6 +1607,7 @@ function VehicleDetails() {
                           inline-flex
                           shrink-0
                           items-center
+                          justify-center
                           gap-2
                           rounded-lg
                           border
@@ -1496,22 +1756,21 @@ function VehicleDetails() {
                     formData
                       .registration
                   }
-                  onChange={
-                    (
-                      event,
-                    ) =>
-                      setFormData(
-                        (
-                          current,
-                        ) => ({
-                          ...current,
+                  onChange={(
+                    event,
+                  ) =>
+                    setFormData(
+                      (
+                        current,
+                      ) => ({
+                        ...current,
 
-                          registration:
-                            event
-                              .target
-                              .value,
-                        }),
-                      )
+                        registration:
+                          event
+                            .target
+                            .value,
+                      }),
+                    )
                   }
                   className="
                     mt-2
@@ -1538,24 +1797,24 @@ function VehicleDetails() {
 
                 <input
                   value={
-                    formData.make
+                    formData
+                      .make
                   }
-                  onChange={
-                    (
-                      event,
-                    ) =>
-                      setFormData(
-                        (
-                          current,
-                        ) => ({
-                          ...current,
+                  onChange={(
+                    event,
+                  ) =>
+                    setFormData(
+                      (
+                        current,
+                      ) => ({
+                        ...current,
 
-                          make:
-                            event
-                              .target
-                              .value,
-                        }),
-                      )
+                        make:
+                          event
+                            .target
+                            .value,
+                      }),
+                    )
                   }
                   className="
                     mt-2
@@ -1581,24 +1840,24 @@ function VehicleDetails() {
 
                 <input
                   value={
-                    formData.model
+                    formData
+                      .model
                   }
-                  onChange={
-                    (
-                      event,
-                    ) =>
-                      setFormData(
-                        (
-                          current,
-                        ) => ({
-                          ...current,
+                  onChange={(
+                    event,
+                  ) =>
+                    setFormData(
+                      (
+                        current,
+                      ) => ({
+                        ...current,
 
-                          model:
-                            event
-                              .target
-                              .value,
-                        }),
-                      )
+                        model:
+                          event
+                            .target
+                            .value,
+                      }),
+                    )
                   }
                   className="
                     mt-2
@@ -1625,26 +1884,26 @@ function VehicleDetails() {
                 <input
                   type="number"
                   value={
-                    formData.year
+                    formData
+                      .year
                   }
-                  onChange={
-                    (
-                      event,
-                    ) =>
-                      setFormData(
-                        (
-                          current,
-                        ) => ({
-                          ...current,
+                  onChange={(
+                    event,
+                  ) =>
+                    setFormData(
+                      (
+                        current,
+                      ) => ({
+                        ...current,
 
-                          year:
-                            Number(
-                              event
-                                .target
-                                .value,
-                            ),
-                        }),
-                      )
+                        year:
+                          Number(
+                            event
+                              .target
+                              .value,
+                          ),
+                      }),
+                    )
                   }
                   className="
                     mt-2

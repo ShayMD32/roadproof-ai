@@ -15,7 +15,9 @@ import {
 } from 'react-router'
 
 import {
+  formatSeverity,
   getDashboardSummary,
+  hasAssignedSeverity,
 } from '../api/client'
 
 
@@ -447,6 +449,15 @@ function Dashboard() {
                       AlertTriangle
                   }
 
+                  const severityLabel =
+                    hasAssignedSeverity(
+                      inspection.severity,
+                    )
+                      ? `${formatSeverity(
+                          inspection.severity,
+                        )} severity`
+                      : 'Severity not assigned'
+
                   return (
                     <button
                       key={
@@ -537,9 +548,7 @@ function Dashboard() {
                               text-neutral-500
                             "
                           >
-                            {inspection.severity
-                              ? `${inspection.severity} severity`
-                              : 'Severity not assigned'}
+                            {severityLabel}
                           </p>
                         </div>
                       </div>

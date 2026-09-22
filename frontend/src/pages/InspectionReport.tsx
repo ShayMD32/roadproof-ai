@@ -1,4 +1,9 @@
 import {
+  useEffect,
+  useState,
+} from 'react'
+
+import {
   useQuery,
 } from '@tanstack/react-query'
 
@@ -9,6 +14,8 @@ import {
   CarFront,
   CheckCircle2,
   CircleAlert,
+  ImageIcon,
+  LoaderCircle,
   ScanLine,
   ShieldAlert,
   ShieldCheck,
@@ -20,7 +27,10 @@ import {
 } from 'react-router'
 
 import {
+  formatSeverity,
   getInspectionReport,
+  getProtectedImageUrl,
+  revokeProtectedImageUrl,
 } from '../api/client'
 
 
@@ -42,6 +52,207 @@ function formatDate(
 }
 
 
+type ProtectedReportImageProps = {
+  contentUrl: string
+  filename: string
+}
+
+
+function ProtectedReportImage({
+  contentUrl,
+  filename,
+}: ProtectedReportImageProps) {
+  const [
+    objectUrl,
+    setObjectUrl,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true)
+
+  const [
+    hasError,
+    setHasError,
+  ] = useState(false)
+
+
+  useEffect(() => {
+    let active = true
+
+    let createdUrl:
+      | string
+      | null = null
+
+    async function loadImage() {
+      setIsLoading(
+        true,
+      )
+
+      setHasError(
+        false,
+      )
+
+      try {
+        const url =
+          await getProtectedImageUrl(
+            contentUrl,
+          )
+
+        createdUrl = url
+
+        if (!active) {
+          revokeProtectedImageUrl(
+            url,
+          )
+
+          return
+        }
+
+        setObjectUrl(
+          url,
+        )
+      } catch {
+        if (active) {
+          setHasError(
+            true,
+          )
+        }
+      } finally {
+        if (active) {
+          setIsLoading(
+            false,
+          )
+        }
+      }
+    }
+
+    loadImage()
+
+    return () => {
+      active = false
+
+      if (createdUrl) {
+        revokeProtectedImageUrl(
+          createdUrl,
+        )
+      }
+    }
+  }, [
+    contentUrl,
+  ])
+
+
+  return (
+    <div
+      className="
+        flex
+        min-h-[360px]
+        items-center
+        justify-center
+        overflow-hidden
+        rounded-2xl
+        border
+        border-white/10
+        bg-black/30
+      "
+    >
+      {isLoading ? (
+        <div className="text-center">
+          <LoaderCircle
+            size={24}
+            className="
+              mx-auto
+              animate-spin
+              text-neutral-500
+            "
+          />
+
+          <p
+            className="
+              mt-3
+              text-xs
+              text-neutral-500
+            "
+          >
+            Loading protected image...
+          </p>
+        </div>
+      ) : hasError ? (
+        <div
+          className="
+            px-6
+            text-center
+          "
+        >
+          <ImageIcon
+            size={28}
+            className="
+              mx-auto
+              text-neutral-600
+            "
+          />
+
+          <p
+            className="
+              mt-3
+              text-sm
+              font-medium
+            "
+          >
+            Preview unavailable
+          </p>
+
+          <p
+            className="
+              mt-1
+              text-xs
+              text-neutral-500
+            "
+          >
+            The protected image could
+            not be loaded.
+          </p>
+        </div>
+      ) : objectUrl ? (
+        <img
+          src={objectUrl}
+          alt={filename}
+          className="
+            max-h-[620px]
+            w-full
+            object-contain
+          "
+        />
+      ) : (
+        <div className="text-center">
+          <ImageIcon
+            size={26}
+            className="
+              mx-auto
+              text-neutral-600
+            "
+          />
+
+          <p
+            className="
+              mt-2
+              text-xs
+              text-neutral-500
+            "
+          >
+            Image unavailable
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function InspectionReport() {
   const navigate =
     useNavigate()
@@ -51,7 +262,9 @@ function InspectionReport() {
   } = useParams()
 
   const numericInspectionId =
-    Number(inspectionId)
+    Number(
+      inspectionId,
+    )
 
   const {
     data: report,
@@ -125,7 +338,9 @@ function InspectionReport() {
             hover:text-white
           "
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft
+            size={16}
+          />
 
           Back
         </button>
@@ -141,9 +356,11 @@ function InspectionReport() {
           "
         >
           <p className="text-sm text-red-300">
-            {error instanceof Error
-              ? error.message
-              : 'Unable to load report'}
+            {
+              error instanceof Error
+                ? error.message
+                : 'Unable to load report'
+            }
           </p>
         </div>
       </div>
@@ -152,14 +369,18 @@ function InspectionReport() {
 
 
   const confidence =
-    report.summary
+    report
+      .summary
       .highest_confidence
 
   const review =
-    report.summary.review
+    report
+      .summary
+      .review
 
   const thresholds =
-    report.summary
+    report
+      .summary
       .model_thresholds
 
   const requiresReview =
@@ -195,7 +416,8 @@ function InspectionReport() {
     ResultIcon =
       ShieldAlert
   } else if (
-    report.summary
+    report
+      .summary
       .damage_detected
   ) {
     resultLabel =
@@ -229,7 +451,9 @@ function InspectionReport() {
           hover:text-white
         "
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft
+          size={16}
+        />
 
         Back
       </button>
@@ -267,8 +491,16 @@ function InspectionReport() {
                 md:text-4xl
               "
             >
-              {report.vehicle.make}{' '}
-              {report.vehicle.model}
+              {
+                report
+                  .vehicle
+                  .make
+              }{' '}
+              {
+                report
+                  .vehicle
+                  .model
+              }
             </h1>
 
             <p
@@ -278,10 +510,15 @@ function InspectionReport() {
                 text-neutral-400
               "
             >
-              {report.vehicle.year}
+              {
+                report
+                  .vehicle
+                  .year
+              }
               {' · '}
               {
-                report.vehicle
+                report
+                  .vehicle
                   .registration
               }
             </p>
@@ -308,7 +545,10 @@ function InspectionReport() {
               "
             >
               Inspection #
-              {report.inspection_id}
+              {
+                report
+                  .inspection_id
+              }
             </div>
 
             <div
@@ -324,7 +564,10 @@ function InspectionReport() {
                 text-neutral-300
               "
             >
-              {report.status}
+              {
+                report
+                  .status
+              }
             </div>
           </div>
         </div>
@@ -377,7 +620,9 @@ function InspectionReport() {
 
             <div>
               <p className="text-lg font-semibold">
-                {resultLabel}
+                {
+                  resultLabel
+                }
               </p>
 
               <p
@@ -389,7 +634,9 @@ function InspectionReport() {
                   text-neutral-500
                 "
               >
-                {resultDescription}
+                {
+                  resultDescription
+                }
               </p>
             </div>
           </div>
@@ -403,11 +650,16 @@ function InspectionReport() {
               text-neutral-500
             "
           >
-            <CalendarClock size={15} />
+            <CalendarClock
+              size={15}
+            />
 
-            {formatDate(
-              report.created_at,
-            )}
+            {
+              formatDate(
+                report
+                  .created_at,
+              )
+            }
           </div>
         </div>
       </section>
@@ -423,22 +675,27 @@ function InspectionReport() {
       >
         <ReportStat
           label="Assessment"
-          value={resultLabel}
+          value={
+            resultLabel
+          }
         />
 
         <ReportStat
           label="AI severity estimate"
           value={
-            report.summary
-              .severity ??
-            'Not assigned'
+            formatSeverity(
+              report
+                .summary
+                .severity,
+            )
           }
         />
 
         <ReportStat
           label="Accepted detections"
           value={String(
-            report.summary
+            report
+              .summary
               .damage_count,
           )}
         />
@@ -446,7 +703,8 @@ function InspectionReport() {
         <ReportStat
           label="Highest detection confidence"
           value={
-            confidence !== null
+            confidence !==
+            null
               ? `${Math.round(
                   confidence *
                     100,
@@ -476,6 +734,175 @@ function InspectionReport() {
         />
       </section>
 
+      <section
+        className="
+          mt-6
+          rounded-2xl
+          border
+          border-white/10
+          bg-[#0d0f12]
+          p-6
+        "
+      >
+        <div
+          className="
+            flex
+            items-center
+            gap-3
+          "
+        >
+          <div
+            className="
+              flex
+              h-10
+              w-10
+              items-center
+              justify-center
+              rounded-xl
+              bg-white/[0.05]
+            "
+          >
+            <ImageIcon
+              size={18}
+            />
+          </div>
+
+          <div>
+            <h2 className="text-sm font-medium">
+              Inspection image
+            </h2>
+
+            <p className="text-xs text-neutral-500">
+              Protected source image
+              used for this assessment
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {
+            report
+              .image
+              .content_url
+              ? (
+                <ProtectedReportImage
+                  contentUrl={
+                    report
+                      .image
+                      .content_url
+                  }
+                  filename={
+                    report
+                      .image
+                      .filename
+                  }
+                />
+              )
+              : (
+                <div
+                  className="
+                    flex
+                    min-h-64
+                    flex-col
+                    items-center
+                    justify-center
+                    rounded-2xl
+                    border
+                    border-white/10
+                    bg-black/20
+                    px-6
+                    text-center
+                  "
+                >
+                  <ImageIcon
+                    size={26}
+                    className="text-neutral-600"
+                  />
+
+                  <p
+                    className="
+                      mt-3
+                      text-sm
+                      font-medium
+                    "
+                  >
+                    Image unavailable
+                  </p>
+
+                  <p
+                    className="
+                      mt-1
+                      text-xs
+                      text-neutral-500
+                    "
+                  >
+                    This inspection does
+                    not have a protected
+                    image URL.
+                  </p>
+                </div>
+              )
+          }
+        </div>
+
+        <div
+          className="
+            mt-4
+            flex
+            items-center
+            justify-between
+            gap-4
+            rounded-xl
+            border
+            border-white/10
+            bg-white/[0.02]
+            px-4
+            py-3
+          "
+        >
+          <div className="min-w-0">
+            <p
+              className="
+                truncate
+                text-xs
+                font-medium
+              "
+            >
+              {
+                report
+                  .image
+                  .filename
+              }
+            </p>
+
+            <p
+              className="
+                mt-1
+                text-[11px]
+                text-neutral-500
+              "
+            >
+              Image #
+              {
+                report
+                  .image
+                  .id
+              }
+            </p>
+          </div>
+
+          <span
+            className="
+              shrink-0
+              text-[11px]
+              text-neutral-500
+            "
+          >
+            Authenticated preview
+          </span>
+        </div>
+      </section>
+
       {review && (
         <section
           className={`
@@ -502,25 +929,29 @@ function InspectionReport() {
               gap-3
             "
           >
-            {requiresReview ? (
-              <CircleAlert
-                size={20}
-                className="
-                  mt-0.5
-                  shrink-0
-                  text-amber-400
-                "
-              />
-            ) : (
-              <ShieldCheck
-                size={20}
-                className="
-                  mt-0.5
-                  shrink-0
-                  text-emerald-400
-                "
-              />
-            )}
+            {
+              requiresReview
+                ? (
+                  <CircleAlert
+                    size={20}
+                    className="
+                      mt-0.5
+                      shrink-0
+                      text-amber-400
+                    "
+                  />
+                )
+                : (
+                  <ShieldCheck
+                    size={20}
+                    className="
+                      mt-0.5
+                      shrink-0
+                      text-emerald-400
+                    "
+                  />
+                )
+            }
 
             <div className="w-full">
               <p
@@ -529,9 +960,11 @@ function InspectionReport() {
                   font-medium
                 "
               >
-                {requiresReview
-                  ? 'Manual review required'
-                  : 'Automated review complete'}
+                {
+                  requiresReview
+                    ? 'Manual review required'
+                    : 'Automated review complete'
+                }
               </p>
 
               <p
@@ -543,6 +976,7 @@ function InspectionReport() {
                 "
               >
                 Inspection confidence:{' '}
+
                 <span
                   className="
                     capitalize
@@ -588,64 +1022,70 @@ function InspectionReport() {
                 />
               </div>
 
-              {review
-                .manual_review_reasons
-                .length > 0 && (
-                <div
-                  className="
-                    mt-5
-                    border-t
-                    border-white/10
-                    pt-4
-                  "
-                >
-                  <p
+              {
+                review
+                  .manual_review_reasons
+                  .length > 0 && (
+                  <div
                     className="
-                      text-xs
-                      font-medium
-                      text-neutral-300
+                      mt-5
+                      border-t
+                      border-white/10
+                      pt-4
                     "
                   >
-                    Review reasons
-                  </p>
+                    <p
+                      className="
+                        text-xs
+                        font-medium
+                        text-neutral-300
+                      "
+                    >
+                      Review reasons
+                    </p>
 
-                  <ul
-                    className="
-                      mt-3
-                      space-y-2
-                    "
-                  >
-                    {review
-                      .manual_review_reasons
-                      .map(
-                        (
-                          reason,
-                        ) => (
-                          <li
-                            key={
-                              reason
-                            }
-                            className="
-                              flex
-                              gap-2
-                              text-xs
-                              leading-5
-                              text-neutral-400
-                            "
-                          >
-                            <span className="text-amber-400">
-                              •
-                            </span>
+                    <ul
+                      className="
+                        mt-3
+                        space-y-2
+                      "
+                    >
+                      {
+                        review
+                          .manual_review_reasons
+                          .map(
+                            (
+                              reason,
+                            ) => (
+                              <li
+                                key={
+                                  reason
+                                }
+                                className="
+                                  flex
+                                  gap-2
+                                  text-xs
+                                  leading-5
+                                  text-neutral-400
+                                "
+                              >
+                                <span className="text-amber-400">
+                                  •
+                                </span>
 
-                            <span>
-                              {reason}
-                            </span>
-                          </li>
-                        ),
-                      )}
-                  </ul>
-                </div>
-              )}
+                                <span>
+                                  {
+                                    reason
+                                  }
+                                </span>
+                              </li>
+                            ),
+                          )
+                      }
+                    </ul>
+                  </div>
+                )
+              }
             </div>
           </div>
         </section>
@@ -733,7 +1173,9 @@ function InspectionReport() {
               bg-white/[0.05]
             "
           >
-            <CarFront size={18} />
+            <CarFront
+              size={18}
+            />
           </div>
 
           <div>
@@ -768,7 +1210,8 @@ function InspectionReport() {
           <InfoRow
             label="Registration"
             value={
-              report.vehicle
+              report
+                .vehicle
                 .registration
             }
           />
@@ -776,21 +1219,27 @@ function InspectionReport() {
           <InfoRow
             label="Make"
             value={
-              report.vehicle.make
+              report
+                .vehicle
+                .make
             }
           />
 
           <InfoRow
             label="Model"
             value={
-              report.vehicle.model
+              report
+                .vehicle
+                .model
             }
           />
 
           <InfoRow
             label="Year"
             value={String(
-              report.vehicle.year,
+              report
+                .vehicle
+                .year,
             )}
           />
         </div>
@@ -824,7 +1273,9 @@ function InspectionReport() {
               bg-white/[0.05]
             "
           >
-            <ScanLine size={18} />
+            <ScanLine
+              size={18}
+            />
           </div>
 
           <div>
@@ -849,139 +1300,156 @@ function InspectionReport() {
           </div>
         </div>
 
-        {report.detections
-          .length === 0 ? (
-          <div
-            className="
-              mt-6
-              rounded-2xl
-              border
-              border-white/10
-              bg-white/[0.02]
-              p-6
-              text-center
-            "
-          >
-            {requiresReview ? (
-              <AlertTriangle
-                size={22}
+        {
+          report
+            .detections
+            .length === 0
+            ? (
+              <div
                 className="
-                  mx-auto
-                  text-amber-400
+                  mt-6
+                  rounded-2xl
+                  border
+                  border-white/10
+                  bg-white/[0.02]
+                  p-6
+                  text-center
                 "
-              />
-            ) : (
-              <CheckCircle2
-                size={22}
+              >
+                {
+                  requiresReview
+                    ? (
+                      <AlertTriangle
+                        size={22}
+                        className="
+                          mx-auto
+                          text-amber-400
+                        "
+                      />
+                    )
+                    : (
+                      <CheckCircle2
+                        size={22}
+                        className="
+                          mx-auto
+                          text-emerald-400
+                        "
+                      />
+                    )
+                }
+
+                <p
+                  className="
+                    mt-3
+                    text-sm
+                  "
+                >
+                  No confirmed damage detections
+                </p>
+
+                <p
+                  className="
+                    mt-1
+                    text-xs
+                    text-neutral-500
+                  "
+                >
+                  {
+                    requiresReview
+                      ? (
+                        'Weak or uncertain AI ' +
+                        'signals require ' +
+                        'manual review.'
+                      )
+                      : (
+                        'No detections met the ' +
+                        'damage acceptance ' +
+                        'threshold.'
+                      )
+                  }
+                </p>
+              </div>
+            )
+            : (
+              <div
                 className="
-                  mx-auto
-                  text-emerald-400
+                  mt-6
+                  space-y-3
                 "
-              />
-            )}
+              >
+                {
+                  report
+                    .detections
+                    .map(
+                      (
+                        detection,
+                      ) => (
+                        <div
+                          key={
+                            detection.id
+                          }
+                          className="
+                            flex
+                            items-center
+                            justify-between
+                            rounded-xl
+                            border
+                            border-white/10
+                            bg-white/[0.025]
+                            p-4
+                          "
+                        >
+                          <div>
+                            <p
+                              className="
+                                text-sm
+                                font-medium
+                                capitalize
+                              "
+                            >
+                              {
+                                detection
+                                  .damage_type
+                              }
+                            </p>
 
-            <p
-              className="
-                mt-3
-                text-sm
-              "
-            >
-              No confirmed damage detections
-            </p>
+                            <p
+                              className="
+                                mt-1
+                                text-xs
+                                text-neutral-500
+                              "
+                            >
+                              Detection #
+                              {
+                                detection
+                                  .id
+                              }
+                            </p>
+                          </div>
 
-            <p
-              className="
-                mt-1
-                text-xs
-                text-neutral-500
-              "
-            >
-              {requiresReview
-                ? (
-                  'Weak or uncertain AI ' +
-                  'signals require ' +
-                  'manual review.'
-                )
-                : (
-                  'No detections met the ' +
-                  'damage acceptance ' +
-                  'threshold.'
-                )}
-            </p>
-          </div>
-        ) : (
-          <div
-            className="
-              mt-6
-              space-y-3
-            "
-          >
-            {report.detections
-              .map(
-                (
-                  detection,
-                ) => (
-                  <div
-                    key={
-                      detection.id
-                    }
-                    className="
-                      flex
-                      items-center
-                      justify-between
-                      rounded-xl
-                      border
-                      border-white/10
-                      bg-white/[0.025]
-                      p-4
-                    "
-                  >
-                    <div>
-                      <p
-                        className="
-                          text-sm
-                          font-medium
-                          capitalize
-                        "
-                      >
-                        {
-                          detection
-                            .damage_type
-                        }
-                      </p>
-
-                      <p
-                        className="
-                          mt-1
-                          text-xs
-                          text-neutral-500
-                        "
-                      >
-                        Detection #
-                        {
-                          detection.id
-                        }
-                      </p>
-                    </div>
-
-                    <p
-                      className="
-                        text-sm
-                        font-medium
-                      "
-                    >
-                      {Math.round(
-                        detection
-                          .confidence *
-                          100,
-                      )}
-                      %
-                    </p>
-                  </div>
-                ),
-              )}
-          </div>
-        )}
+                          <p
+                            className="
+                              text-sm
+                              font-medium
+                            "
+                          >
+                            {
+                              Math.round(
+                                detection
+                                  .confidence *
+                                  100,
+                              )
+                            }
+                            %
+                          </p>
+                        </div>
+                      ),
+                    )
+                }
+              </div>
+            )
+        }
       </section>
 
       <section
@@ -1068,7 +1536,8 @@ function InspectionReport() {
           <InfoRow
             label="Repository"
             value={
-              report.model
+              report
+                .model
                 .repository
             }
           />
@@ -1076,7 +1545,8 @@ function InspectionReport() {
           <InfoRow
             label="Checkpoint"
             value={
-              report.model
+              report
+                .model
                 .checkpoint
             }
           />
@@ -1144,7 +1614,9 @@ function ReportStat({
           text-neutral-500
         "
       >
-        {label}
+        {
+          label
+        }
       </p>
 
       <p
@@ -1155,7 +1627,9 @@ function ReportStat({
           capitalize
         "
       >
-        {value}
+        {
+          value
+        }
       </p>
     </div>
   )
@@ -1188,7 +1662,9 @@ function ReviewMetric({
           text-neutral-500
         "
       >
-        {label}
+        {
+          label
+        }
       </p>
 
       <p
@@ -1198,7 +1674,9 @@ function ReviewMetric({
           font-medium
         "
       >
-        {value}
+        {
+          value
+        }
       </p>
     </div>
   )
@@ -1233,7 +1711,9 @@ function InfoRow({
           text-neutral-500
         "
       >
-        {label}
+        {
+          label
+        }
       </p>
 
       <p
@@ -1242,7 +1722,9 @@ function InfoRow({
           text-sm
         "
       >
-        {value}
+        {
+          value
+        }
       </p>
     </div>
   )
